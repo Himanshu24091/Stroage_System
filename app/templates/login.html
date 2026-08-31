@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Unlock Vault | {{ app_title }}{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="auth-card glass-panel">
+        <div class="auth-header">
+            <div class="lock-icon-wrapper">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+            </div>
+            <h2 class="auth-title">Vault Locked</h2>
+            <p class="auth-subtitle">Enter your Master PIN to access your cloud storage</p>
+        </div>
+
+        <form id="loginForm" class="auth-form">
+            <div class="pin-input-group">
+                <input 
+                    type="password" 
+                    id="pinInput" 
+                    class="pin-input" 
+                    placeholder="Enter PIN" 
+                    maxlength="16" 
+                    autocomplete="current-password"
+                    autofocus 
+                    required
+                >
+                <button type="button" id="togglePinVis" class="pin-toggle-btn" title="Toggle visibility">
+                    <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div id="authErrorMessage" class="auth-error hidden">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span id="errorText">Invalid Master PIN. Try again.</span>
+            </div>
+
+            <button type="submit" id="unlockBtn" class="btn-primary btn-full">
+                <span>Unlock Vault</span>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                    <polyline points="12 5 19 12 12 19"/>
+                </svg>
+            </button>
+        </form>
+
+        <div class="auth-footer">
+            <div class="stealth-tag">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                <span>Stealth Office-Proxy Protected</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+{% endblock %}

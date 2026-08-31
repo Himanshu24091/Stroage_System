@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-container">
+    
+    <!-- Top Stats / Hero Bar -->
+    <section class="stats-hero-grid">
+        <div class="stat-card glass-panel">
+            <div class="stat-icon-wrapper cyan">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+            </div>
+            <div class="stat-info">
+                <span class="stat-label">Total Files</span>
+                <span id="statTotalFiles" class="stat-value">0</span>
+            </div>
+        </div>
+
+        <div class="stat-card glass-panel">
+            <div class="stat-icon-wrapper purple">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                </svg>
+            </div>
+            <div class="stat-info">
+                <span class="stat-label">Vault Storage</span>
+                <span id="statVaultStorage" class="stat-value">0 MB</span>
+            </div>
+        </div>
+
+        <div class="stat-card glass-panel">
+            <div class="stat-icon-wrapper emerald">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+            </div>
+            <div class="stat-info">
+                <span class="stat-label">Office Firewall</span>
+                <span class="stat-value text-emerald">Bypassed <small>(100% Stealth)</small></span>
+            </div>
+        </div>
+
+        <div class="stat-card glass-panel">
+            <div class="stat-icon-wrapper amber">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="2" y1="12" x2="22" y2="12"/>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                </svg>
+            </div>
+            <div class="stat-info">
+                <span class="stat-label">Drive Bridge</span>
+                <span id="statBridgeStatus" class="stat-value">
+                    {% if gas_configured %}
+                    <span class="text-cyan">Connected</span>
+                    {% else %}
+                    <span class="text-muted">Link Mode</span>
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Upload & Ingestion Section -->
+    <section class="action-panel glass-panel">
+        <div class="panel-tab-header">
+            <button class="tab-btn active" data-tab="uploadTab">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <span>Upload File</span>
+            </button>
+
+            <button class="tab-btn" data-tab="importTab">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                </svg>
+                <span>Import Google Drive Link</span>
+            </button>
+        </div>
+
+        <div class="panel-tab-content">
+            <!-- TAB 1: Upload Dropzone -->
+            <div id="uploadTab" class="tab-pane active">
+                <div id="dropzone" class="dropzone-area">
+                    <input type="file" id="fileInput" class="file-input-hidden" multiple>
+                    <div class="dropzone-inner">
+                        <div class="upload-icon-pulse">
+                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>
+                                <path d="M12 12v9"/>
+                                <path d="m8 17 4-4 4 4"/>
+                            </svg>
+                        </div>
+                        <h3 class="dropzone-title">Drag & drop large files here, or <span class="browse-link">browse</span></h3>
+                        <p class="dropzone-subtitle">Direct upload to Google Drive with automated stealth streaming support (Up to 2GB)</p>
+                    </div>
+                </div>
+
+                <!-- Live Upload Progress Card -->
+                <div id="uploadProgressCard" class="progress-card hidden">
+                    <div class="progress-info-row">
+                        <div class="progress-file-name" id="uploadFilename">sample_large_video.mp4</div>
+                        <div class="progress-percent" id="uploadPercentage">0%</div>
+                    </div>
+                    <div class="progress-bar-track">
+                        <div id="uploadProgressBar" class="progress-bar-fill" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-status-row">
+                        <span id="uploadSpeed">0 MB/s</span>
+                        <span id="uploadStatusText">Streaming data to storage bridge...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: Import Google Drive Link -->
+            <div id="importTab" class="tab-pane">
+                <form id="importLinkForm" class="import-form">
+                    <div class="form-row">
+                        <div class="form-group flex-2">
+                            <label for="driveUrlInput">Google Drive Link or File ID</label>
+                            <div class="input-with-icon">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                                </svg>
+                                <input 
+                                    type="url" 
+                                    id="driveUrlInput" 
+                                    placeholder="https://drive.google.com/file/d/1A2B3C.../view?usp=sharing" 
+                                    required
+                                >
+                            </div>
+                        </div>
+
+                        <div class="form-group flex-1">
+                            <label for="customNameInput">Custom File Name (Optional)</label>
+                            <input 
+                                type="text" 
+                                id="customNameInput" 
+                                placeholder="e.g. Project_Presentation.pdf"
+                            >
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" id="submitImportBtn" class="btn-primary">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 5v14M5 12h14"/>
+                            </svg>
+                            <span>Add to Vault</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </section>
+
+    <!-- File Manager Section -->
+    <section class="file-manager-section">
+        <!-- Control Bar: Search, Category Pills, View Switch -->
+        <div class="manager-controls-bar glass-panel">
+            <div class="search-box">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input type="text" id="searchInput" placeholder="Search files by name...">
+            </div>
+
+            <div class="category-pills" id="categoryFilterContainer">
+                <button class="pill-btn active" data-category="all">All</button>
+                <button class="pill-btn" data-category="video">🎬 Videos</button>
+                <button class="pill-btn" data-category="document">📄 Docs</button>
+                <button class="pill-btn" data-category="pdf">📑 PDFs</button>
+                <button class="pill-btn" data-category="image">🖼️ Images</button>
+                <button class="pill-btn" data-category="audio">🎵 Audio</button>
+                <button class="pill-btn" data-category="archive">📦 Archives</button>
+                <button class="pill-btn" data-category="code">💻 Code</button>
+            </div>
+
+            <div class="right-controls">
+                <select id="sortSelect" class="select-dropdown">
+                    <option value="newest">Newest First</option>
+                    <option value="oldest">Oldest First</option>
+                    <option value="name">Name (A-Z)</option>
+                    <option value="size">Largest Size</option>
+                </select>
+
+                <div class="view-toggle-group">
+                    <button id="viewGridBtn" class="toggle-btn active" title="Grid View">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"/>
+                            <rect x="14" y="3" width="7" height="7"/>
+                            <rect x="14" y="14" width="7" height="7"/>
+                            <rect x="3" y="14" width="7" height="7"/>
+                        </svg>
+                    </button>
+                    <button id="viewListBtn" class="toggle-btn" title="List/Table View">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="8" y1="6" x2="21" y2="6"/>
+                            <line x1="8" y1="12" x2="21" y2="12"/>
+                            <line x1="8" y1="18" x2="21" y2="18"/>
+                            <line x1="3" y1="6" x2="3.01" y2="6"/>
+                            <line x1="3" y1="12" x2="3.01" y2="12"/>
+                            <line x1="3" y1="18" x2="3.01" y2="18"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Files Container (Grid & Table Mode) -->
+        <div id="fileListContainer" class="files-grid-view">
+            <!-- Dynamically populated via JS -->
+            <div class="empty-state" id="loadingState">
+                <div class="spinner-ring"></div>
+                <p>Loading files from vault...</p>
+            </div>
+        </div>
+    </section>
+
+</div>
+
+<!-- Include Preview Modal -->
+{% include "preview_modal.html" %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/preview.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% if enable_auth %}
+<script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+{% endif %}
+{% endblock %}
