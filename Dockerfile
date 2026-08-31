@@ -28,5 +28,5 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:5000/api/health || exit 1
 
-# Start Gunicorn WSGI Server with 4 workers and streaming support
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--threads", "2", "--timeout", "300", "run:app"]
+# Start Gunicorn WSGI Server with dynamic port & workers configuration
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "run:app"]
