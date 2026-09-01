@@ -283,24 +283,139 @@ body::after {
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
+    .nav-container {
+        padding: 10px 14px;
+        gap: 8px;
+    }
+
+    .logo-icon-box {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+    }
+
+    .logo-icon-box svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    .brand-name {
+        font-size: 1.05rem;
+        letter-spacing: 0px;
+    }
+
+    .brand-badge {
+        font-size: 0.55rem;
+        padding: 1px 4px;
+    }
+
+    .nav-actions {
+        gap: 8px;
+    }
+
+    .stealth-indicator {
+        padding: 4px 10px;
+        font-size: 0.75rem;
+        gap: 6px;
+    }
+
     .main-content {
         padding: 16px 12px 40px;
     }
+    
     .stats-hero-grid {
         grid-template-columns: repeat(2, 1fr);
         gap: 12px;
     }
+    
     .stat-card {
         padding: 14px;
         gap: 12px;
     }
+    
     .stat-value {
         font-size: 1.15rem;
+    }
+}
+
+@media (max-width: 520px) {
+    .nav-container {
+        padding: 8px 12px;
+    }
+
+    .brand-text .brand-name {
+        font-size: 0.95rem;
+    }
+
+    .brand-badge {
+        display: none;
+    }
+
+    /* Collapse Proxy Active badge into pulsing stealth dot */
+    .stealth-indicator .indicator-label {
+        display: none;
+    }
+
+    .stealth-indicator {
+        padding: 6px 8px;
+        border-radius: var(--radius-full);
+        background: rgba(16, 185, 129, 0.15);
+    }
+
+    /* Compact User Profile Badge */
+    .user-profile-badge {
+        padding: 2px 8px 2px 3px;
+        gap: 6px;
+        max-width: 120px;
+    }
+
+    .user-avatar-small {
+        width: 24px;
+        height: 24px;
+        font-size: 0.7rem;
+        flex-shrink: 0;
+    }
+
+    .nav-username {
+        font-size: 0.78rem;
+        max-width: 75px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Compact Logout Button on Mobile - Always Fits on Screen */
+    .logout-btn {
+        padding: 6px 10px !important;
+        font-size: 0.8rem;
+    }
+
+    .logout-btn span {
+        display: none;
+    }
+
+    /* Admin badge on mobile */
+    .admin-badge span {
+        display: none;
+    }
+    .admin-badge {
+        padding: 6px;
+        border-radius: 50%;
+        margin: 0 !important;
     }
 }
 
 @media (max-width: 480px) {
     .stats-hero-grid {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 360px) {
+    .brand-text .brand-name {
+        display: none;
+    }
+    .nav-username {
+        display: none;
     }
 }
