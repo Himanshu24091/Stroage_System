@@ -109,7 +109,7 @@ class FileItem(db.Model):
         return "other"
 
     def to_dict(self):
-        """Serializes file record to dictionary for API responses"""
+        """Serializes file metadata for API responses"""
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -119,10 +119,36 @@ class FileItem(db.Model):
             "mime_type": self.mime_type,
             "category": self.category,
             "drive_file_id": self.drive_file_id,
-            "drive_url": self.drive_url,
             "source_type": self.source_type,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "download_url": f"/api/files/download/{self.id}",
             "stream_url": f"/api/files/stream/{self.id}"
+        }
+
+class SystemNotice(db.Model):
+    """System & Data Deletion Warning Notices sent by Admin to users"""
+    __tablename__ = "system_notices"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    title = db.Column(db.String(200), default="Important Storage Notice")
+    message = db.Column(db.Text, nullable=False)
+    notice_type = db.Column(db.String(32), default="warning")
+    deadline_days = db.Column(db.Integer, default=2)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    user = db.relationship("User", backref=db.backref("notices", cascade="all, delete-orphan", lazy="dynamic"))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "title": self.title,
+            "message": self.message,
+            "notice_type": self.notice_type,
+            "deadline_days": self.deadline_days,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None
         }

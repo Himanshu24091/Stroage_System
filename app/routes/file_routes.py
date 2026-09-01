@@ -4,7 +4,7 @@ import urllib.parse
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, abort, g
 from app import db
-from app.utils.db_models import FileItem
+from app.utils.db_models import FileItem, SystemNotice
 from app.utils.auth_guard import require_login
 from app.utils.drive_streamer import extract_drive_id, create_stealth_stream_response, USER_AGENT, is_drive_folder_url, extract_drive_folder_id
 from app.utils.gas_bridge import upload_file_to_gas, upload_file_from_disk_to_gas, delete_file_from_gas, get_storage_stats_from_gas, is_gas_configured, get_folder_files_from_gas
@@ -438,3 +438,29 @@ def storage_stats():
         "total_formatted": f"{(total_bytes / (1024 * 1024)):.2f} MB" if total_bytes < 1024**3 else f"{(total_bytes / 1024**3):.2f} GB",
         "drive_metrics": gas_stats
     }), 200
+
+@file_bp.route("/notices", methods=["GET"])
+@require_login
+def get_user_notices():
+    """Fetch active deletion warning / system notices for the logged in user"""
+    notices = SystemNotice.query.filter(
+        SystemNotice.is_active == True,
+        (SystemNotice.user_id == g.current_user.id) | (SystemNotice.user_id.is_(None))
+    ).order_by(SystemNotice.created_at.desc()).all()
+
+    return jsonify({
+        "success": True,
+        "notices": [n.to_dict() for n in notices]
+    }), 200
+
+@file_bp.route("/notices/<int:notice_id>/dismiss", methods=["POST"])
+@require_login
+def dismiss_user_notice(notice_id):
+    """User acknowledges and dismisses a notice"""
+    notice = SystemNotice.query.get(notice_id)
+    # If notice is specific to user, mark inactive or record dismissal
+    if notice and notice.user_id == g.current_user.id:
+        notice.is_active = False
+        db.session.commit()
+
+    return jsonify({"success": True, "message": "Notice dismissed"}), 200

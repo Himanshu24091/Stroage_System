@@ -45,7 +45,7 @@ def create_app(config_class=Config):
 
     # Ensure tables are created and schema is migrated
     with app.app_context():
-        from app.utils.db_models import User, FileItem
+        from app.utils.db_models import User, FileItem, SystemNotice
         db.create_all()
         try:
             from sqlalchemy import text

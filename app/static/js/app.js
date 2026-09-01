@@ -568,6 +568,68 @@ document.addEventListener("DOMContentLoaded", () => {
         return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
 
+    // 5. USER NOTICES & DELETION WARNING POPUP SYSTEM
+    async function checkUserNotices() {
+        const container = document.getElementById("userNoticeContainer");
+        if (!container) return;
+
+        try {
+            const res = await fetch("/api/files/notices");
+            if (!res.ok) return;
+            const data = await res.json();
+            const notices = data.notices || [];
+
+            if (notices.length === 0) {
+                container.classList.add("hidden");
+                container.innerHTML = "";
+                return;
+            }
+
+            // Render active notice banner
+            const notice = notices[0];
+            container.classList.remove("hidden");
+            container.innerHTML = `
+                <div class="glass-panel" style="border: 1px solid rgba(245, 158, 11, 0.4); background: linear-gradient(135deg, rgba(245, 158, 11, 0.14), rgba(15, 23, 42, 0.95)); padding: 18px 22px; border-radius: var(--radius-lg); display: flex; justify-content: space-between; align-items: center; gap: 16px; box-shadow: 0 8px 32px rgba(245, 158, 11, 0.2); animation: fadeIn 0.4s ease;">
+                    <div style="display: flex; gap: 14px; align-items: flex-start;">
+                        <div class="stat-icon-wrapper amber" style="width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0; background: rgba(245, 158, 11, 0.2); color: var(--amber-primary);">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                                <line x1="12" y1="9" x2="12" y2="13"/>
+                                <line x1="12" y1="17" x2="12.01" y2="17"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px; flex-wrap: wrap;">
+                                <h4 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--amber-primary);">${escapeHtml(notice.title)}</h4>
+                                <span class="role-badge" style="background: rgba(245, 158, 11, 0.2); color: var(--amber-primary); border: 1px solid rgba(245, 158, 11, 0.4); font-size: 0.75rem; font-weight: 700;">
+                                    ⏳ Action within ${notice.deadline_days || 2} Days
+                                </span>
+                            </div>
+                            <p style="margin: 0; font-size: 0.88rem; color: var(--text-main); line-height: 1.4;">${escapeHtml(notice.message)}</p>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-secondary dismiss-notice-btn" data-id="${notice.id}" style="border-color: rgba(245, 158, 11, 0.4); color: var(--amber-primary); white-space: nowrap; flex-shrink: 0;">
+                        <span>I Understand / Dismiss</span>
+                    </button>
+                </div>
+            `;
+
+            container.querySelector(".dismiss-notice-btn").addEventListener("click", async () => {
+                container.style.opacity = "0";
+                container.style.transform = "translateY(-10px)";
+                container.style.transition = "all 0.3s ease";
+                setTimeout(() => container.classList.add("hidden"), 300);
+
+                try {
+                    await fetch(`/api/files/notices/${notice.id}/dismiss`, { method: "POST" });
+                } catch (e) {}
+            });
+        } catch (err) {
+            console.error("Error checking user notices:", err);
+        }
+    }
+
     // Initial Load
     loadFiles();
+    checkUserNotices();
 });

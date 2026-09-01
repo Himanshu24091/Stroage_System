@@ -1,5 +1,6 @@
 /**
  * Stealth Cloud Vault - Admin Control Dashboard JavaScript
+ * Multi-Select Batch Actions & Modal Support
  */
 document.addEventListener("DOMContentLoaded", () => {
     // Top Stats
@@ -24,6 +25,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const adminFileSearch = document.getElementById("adminFileSearch");
     const fileCountBadge = document.getElementById("fileCountBadge");
     const claimAllFilesBtn = document.getElementById("claimAllFilesBtn");
+    const selectAllAdminFiles = document.getElementById("selectAllAdminFiles");
+    const adminFilesBatchBar = document.getElementById("adminFilesBatchBar");
+    const selectedFilesCount = document.getElementById("selectedFilesCount");
+    const batchAssignBtn = document.getElementById("batchAssignBtn");
+    const batchDeleteBtn = document.getElementById("batchDeleteBtn");
+    const clearSelectedFilesBtn = document.getElementById("clearSelectedFilesBtn");
 
     // Password Modal elements
     const resetModal = document.getElementById("resetPasswordModal");
@@ -41,14 +48,45 @@ document.addEventListener("DOMContentLoaded", () => {
     // Assign File Modal elements
     const assignModal = document.getElementById("assignFileModal");
     const assignForm = document.getElementById("assignFileForm");
-    const assignTargetFileId = document.getElementById("assignTargetFileId");
     const assignFileSubtitle = document.getElementById("assignFileSubtitle");
     const assignUserSelect = document.getElementById("assignUserSelect");
     const closeAssignModalBtn = document.getElementById("closeAssignModalBtn");
     const cancelAssignBtn = document.getElementById("cancelAssignBtn");
 
+    // User Data Management Modal elements
+    const userDataModal = document.getElementById("userDataModal");
+    const manageTargetUserId = document.getElementById("manageTargetUserId");
+    const manageUsername = document.getElementById("manageUsername");
+    const manageUserFilesCount = document.getElementById("manageUserFilesCount");
+    const manageUserStorage = document.getElementById("manageUserStorage");
+    const userFilesManageBody = document.getElementById("userFilesManageBody");
+    const sendNoticeForm = document.getElementById("sendNoticeForm");
+    const noticeDeadlineInput = document.getElementById("noticeDeadlineInput");
+    const noticeTitleInput = document.getElementById("noticeTitleInput");
+    const noticeMessageInput = document.getElementById("noticeMessageInput");
+    const purgeDaysSelect = document.getElementById("purgeDaysSelect");
+    const purgeOldFilesBtn = document.getElementById("purgeOldFilesBtn");
+    const closeUserDataModalBtn = document.getElementById("closeUserDataModalBtn");
+    const closeUserDataModalBottomBtn = document.getElementById("closeUserDataModalBottomBtn");
+    const selectAllUserModalFiles = document.getElementById("selectAllUserModalFiles");
+    const userFilesBatchBar = document.getElementById("userFilesBatchBar");
+    const userSelectedCount = document.getElementById("userSelectedCount");
+    const userBatchDeleteBtn = document.getElementById("userBatchDeleteBtn");
+
     let allUsers = [];
     let allFiles = [];
+    let selectedFileIds = new Set();
+    let userSelectedFileIds = new Set();
+    let currentAssignFileIds = [];
+
+    // Helper: Close modals on backdrop click
+    document.querySelectorAll(".modal-overlay").forEach(overlay => {
+        overlay.addEventListener("click", (e) => {
+            if (e.target === overlay) {
+                overlay.classList.add("hidden");
+            }
+        });
+    });
 
     // 1. Tab Switching
     if (adminTabUsersBtn && adminTabFilesBtn) {
@@ -95,6 +133,8 @@ document.addEventListener("DOMContentLoaded", () => {
             if (filesRes.ok) {
                 const fileData = await filesRes.json();
                 allFiles = fileData.files || [];
+                selectedFileIds.clear();
+                updateBatchBar();
                 renderFiles(allFiles);
             }
         } catch (err) {
@@ -142,12 +182,19 @@ document.addEventListener("DOMContentLoaded", () => {
                     <td class="text-muted text-sm">${joinedDate}</td>
                     <td class="text-right">
                         <div class="action-buttons-group">
+                            <button class="btn-action manage-data-btn" data-id="${user.id}" data-username="${escapeHtml(user.username)}" title="Manage User Data & Send Notice" style="color: var(--purple-primary); border-color: rgba(168, 85, 247, 0.4); background: rgba(168, 85, 247, 0.1);">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                    <circle cx="12" cy="7" r="4"/>
+                                </svg>
+                                <span>Data & Notice</span>
+                            </button>
                             <button class="btn-action reset-pass-btn" data-id="${user.id}" data-username="${escapeHtml(user.username)}" title="Reset Password">
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
                                     <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                                 </svg>
-                                <span>Reset Password</span>
+                                <span>Reset Pass</span>
                             </button>
                             ${!user.is_admin ? `
                                 <button class="btn-action-delete delete-user-btn" data-id="${user.id}" data-username="${escapeHtml(user.username)}" title="Delete User">
@@ -162,6 +209,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 </tr>
             `;
         }).join("");
+
+        document.querySelectorAll(".manage-data-btn").forEach(btn => {
+            btn.addEventListener("click", () => openUserDataModal(btn.dataset.id, btn.dataset.username));
+        });
 
         document.querySelectorAll(".reset-pass-btn").forEach(btn => {
             btn.addEventListener("click", () => openResetModal(btn.dataset.id, btn.dataset.username));
@@ -178,15 +229,17 @@ document.addEventListener("DOMContentLoaded", () => {
         if (files.length === 0) {
             adminFilesTableBody.innerHTML = `
                 <tr>
-                    <td colspan="6" class="text-center py-6 text-muted">No vault files found in the database.</td>
+                    <td colspan="7" class="text-center py-6 text-muted">No vault files found in the database.</td>
                 </tr>
             `;
+            if (selectAllAdminFiles) selectAllAdminFiles.checked = false;
             return;
         }
 
         adminFilesTableBody.innerHTML = files.map(file => {
             const dateStr = file.created_at ? new Date(file.created_at).toLocaleDateString("en-US", { month: 'short', day: 'numeric', year: 'numeric' }) : "N/A";
             const sizeStr = formatBytes(file.file_size || 0);
+            const isChecked = selectedFileIds.has(file.id);
 
             const isUnassigned = file.is_unassigned;
             const ownerHtml = isUnassigned 
@@ -194,7 +247,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 : `<span class="role-badge role-user" style="color: var(--cyan-primary);">@${escapeHtml(file.owner_username)}</span>`;
 
             return `
-                <tr class="user-row">
+                <tr class="user-row ${isChecked ? 'selected-row' : ''}">
+                    <td style="text-align: center;">
+                        <input type="checkbox" class="file-checkbox custom-checkbox" data-id="${file.id}" ${isChecked ? 'checked' : ''}>
+                    </td>
                     <td>
                         <div class="user-cell">
                             <div class="stat-icon-wrapper cyan" style="width: 32px; height: 32px; border-radius: 6px;">
@@ -242,12 +298,104 @@ document.addEventListener("DOMContentLoaded", () => {
             `;
         }).join("");
 
+        // Checkbox events
+        document.querySelectorAll(".file-checkbox").forEach(cb => {
+            cb.addEventListener("change", (e) => {
+                const fileId = parseInt(e.target.dataset.id, 10);
+                if (e.target.checked) {
+                    selectedFileIds.add(fileId);
+                } else {
+                    selectedFileIds.delete(fileId);
+                }
+                updateBatchBar();
+            });
+        });
+
         document.querySelectorAll(".assign-single-file-btn").forEach(btn => {
-            btn.addEventListener("click", () => openAssignModal(btn.dataset.id, btn.dataset.filename));
+            btn.addEventListener("click", () => openAssignModal([parseInt(btn.dataset.id, 10)], btn.dataset.filename));
         });
 
         document.querySelectorAll(".delete-file-btn").forEach(btn => {
             btn.addEventListener("click", () => handleDeleteFile(btn.dataset.id, btn.dataset.filename));
+        });
+    }
+
+    // Select All Checkbox Handler
+    if (selectAllAdminFiles) {
+        selectAllAdminFiles.addEventListener("change", (e) => {
+            const isChecked = e.target.checked;
+            selectedFileIds.clear();
+            if (isChecked) {
+                allFiles.forEach(f => selectedFileIds.add(f.id));
+            }
+            document.querySelectorAll(".file-checkbox").forEach(cb => {
+                cb.checked = isChecked;
+            });
+            updateBatchBar();
+        });
+    }
+
+    function updateBatchBar() {
+        const count = selectedFileIds.size;
+        if (!adminFilesBatchBar) return;
+
+        if (count > 0) {
+            adminFilesBatchBar.classList.remove("hidden");
+            selectedFilesCount.textContent = `✅ ${count} File${count === 1 ? '' : 's'} Selected`;
+        } else {
+            adminFilesBatchBar.classList.add("hidden");
+        }
+
+        if (selectAllAdminFiles) {
+            selectAllAdminFiles.checked = (count > 0 && count === allFiles.length);
+        }
+    }
+
+    if (clearSelectedFilesBtn) {
+        clearSelectedFilesBtn.addEventListener("click", () => {
+            selectedFileIds.clear();
+            if (selectAllAdminFiles) selectAllAdminFiles.checked = false;
+            document.querySelectorAll(".file-checkbox").forEach(cb => cb.checked = false);
+            updateBatchBar();
+        });
+    }
+
+    // Batch Assign Click
+    if (batchAssignBtn) {
+        batchAssignBtn.addEventListener("click", () => {
+            const ids = Array.from(selectedFileIds);
+            if (ids.length === 0) return;
+            openAssignModal(ids, `${ids.length} selected files`);
+        });
+    }
+
+    // Batch Delete Click
+    if (batchDeleteBtn) {
+        batchDeleteBtn.addEventListener("click", async () => {
+            const ids = Array.from(selectedFileIds);
+            if (ids.length === 0) return;
+
+            if (!confirm(`Are you sure you want to permanently delete ${ids.length} selected file(s)?`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch("/api/admin/files/batch-delete", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ file_ids: ids })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    window.showToast(data.message, "success");
+                    loadAdminData();
+                } else {
+                    window.showToast(data.error || "Failed to delete files", "error");
+                }
+            } catch (err) {
+                window.showToast("Network error during batch delete", "error");
+            }
         });
     }
 
@@ -367,10 +515,10 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // 5. Assign Single File Modal
-    function openAssignModal(fileId, filename) {
-        assignTargetFileId.value = fileId;
-        assignFileSubtitle.textContent = `Assign '${filename}' to user account`;
+    // 5. Assign Files to User Modal (Supports Single & Multi-Select)
+    function openAssignModal(fileIds, label) {
+        currentAssignFileIds = fileIds;
+        assignFileSubtitle.textContent = `Assign ${label} to selected user account`;
         assignModal.classList.remove("hidden");
     }
 
@@ -384,7 +532,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (assignForm) {
         assignForm.addEventListener("submit", async (e) => {
             e.preventDefault();
-            const fileId = assignTargetFileId.value;
             const targetUserId = parseInt(assignUserSelect.value, 10);
 
             if (!targetUserId) {
@@ -393,22 +540,27 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             try {
-                const res = await fetch(`/api/admin/files/${fileId}/assign`, {
+                const res = await fetch("/api/admin/files/batch-assign", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ user_id: targetUserId })
+                    body: JSON.stringify({
+                        file_ids: currentAssignFileIds,
+                        user_id: targetUserId
+                    })
                 });
 
                 const data = await res.json();
                 if (res.ok && data.success) {
                     window.showToast(data.message, "success");
                     closeAssignModal();
+                    selectedFileIds.clear();
+                    updateBatchBar();
                     loadAdminData();
                 } else {
-                    window.showToast(data.error || "Failed to assign file", "error");
+                    window.showToast(data.error || "Failed to assign file(s)", "error");
                 }
             } catch (err) {
-                window.showToast("Network error while assigning file", "error");
+                window.showToast("Network error while assigning files", "error");
             }
         });
     }
@@ -495,6 +647,225 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         } catch (err) {
             window.showToast("Network error while deleting file", "error");
+        }
+    }
+
+    // 8. User Data Management & Deletion Notice Center Logic
+    async function openUserDataModal(userId, username) {
+        manageTargetUserId.value = userId;
+        manageUsername.textContent = `@${username}`;
+        manageUserFilesCount.textContent = "...";
+        manageUserStorage.textContent = "...";
+        userSelectedFileIds.clear();
+        updateUserBatchBar();
+        if (selectAllUserModalFiles) selectAllUserModalFiles.checked = false;
+
+        userFilesManageBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">Loading user vault data...</td></tr>`;
+        
+        userDataModal.classList.remove("hidden");
+
+        try {
+            const res = await fetch(`/api/admin/users/${userId}/profile`);
+            const data = await res.json();
+            if (res.ok && data.success) {
+                const user = data.user;
+                const files = data.files || [];
+                manageUserFilesCount.textContent = files.length;
+                manageUserStorage.textContent = formatBytes(user.total_bytes || 0);
+
+                if (files.length === 0) {
+                    userFilesManageBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">This user has no uploaded files.</td></tr>`;
+                } else {
+                    userFilesManageBody.innerHTML = files.map(f => {
+                        const dateStr = f.created_at ? new Date(f.created_at).toLocaleDateString() : "N/A";
+                        return `
+                            <tr>
+                                <td style="text-align: center;">
+                                    <input type="checkbox" class="user-modal-file-cb custom-checkbox" data-id="${f.id}">
+                                </td>
+                                <td><strong style="color: var(--text-main);">${escapeHtml(f.filename)}</strong></td>
+                                <td><span class="role-badge role-user">${escapeHtml(f.category)}</span></td>
+                                <td><span class="metric-highlight">${formatBytes(f.file_size)}</span></td>
+                                <td class="text-muted text-sm">${dateStr}</td>
+                                <td class="text-right">
+                                    <button type="button" class="btn-action-delete delete-user-single-file-btn" data-id="${f.id}" data-filename="${escapeHtml(f.filename)}" title="Delete this file">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="3 6 5 6 21 6"/>
+                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                        </svg>
+                                    </button>
+                                </td>
+                            </tr>
+                        `;
+                    }).join("");
+
+                    // Checkbox change handlers
+                    document.querySelectorAll(".user-modal-file-cb").forEach(cb => {
+                        cb.addEventListener("change", (e) => {
+                            const fileId = parseInt(e.target.dataset.id, 10);
+                            if (e.target.checked) {
+                                userSelectedFileIds.add(fileId);
+                            } else {
+                                userSelectedFileIds.delete(fileId);
+                            }
+                            updateUserBatchBar();
+                        });
+                    });
+
+                    document.querySelectorAll(".delete-user-single-file-btn").forEach(btn => {
+                        btn.addEventListener("click", () => handleDeleteUserSingleFile(btn.dataset.id, btn.dataset.filename));
+                    });
+                }
+            } else {
+                window.showToast("Failed to load user profile", "error");
+            }
+        } catch (err) {
+            window.showToast("Network error loading user files", "error");
+        }
+    }
+
+    if (selectAllUserModalFiles) {
+        selectAllUserModalFiles.addEventListener("change", (e) => {
+            const isChecked = e.target.checked;
+            userSelectedFileIds.clear();
+            document.querySelectorAll(".user-modal-file-cb").forEach(cb => {
+                cb.checked = isChecked;
+                if (isChecked) userSelectedFileIds.add(parseInt(cb.dataset.id, 10));
+            });
+            updateUserBatchBar();
+        });
+    }
+
+    function updateUserBatchBar() {
+        if (!userFilesBatchBar) return;
+        const count = userSelectedFileIds.size;
+        if (count > 0) {
+            userFilesBatchBar.classList.remove("hidden");
+            userSelectedCount.textContent = `✅ ${count} Selected`;
+        } else {
+            userFilesBatchBar.classList.add("hidden");
+        }
+    }
+
+    if (userBatchDeleteBtn) {
+        userBatchDeleteBtn.addEventListener("click", async () => {
+            const ids = Array.from(userSelectedFileIds);
+            if (ids.length === 0) return;
+
+            if (!confirm(`Are you sure you want to permanently delete ${ids.length} selected file(s)?`)) return;
+
+            try {
+                const res = await fetch("/api/admin/files/batch-delete", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ file_ids: ids })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    window.showToast(data.message, "success");
+                    const userId = manageTargetUserId.value;
+                    const username = manageUsername.textContent.replace('@', '');
+                    openUserDataModal(userId, username);
+                    loadAdminData();
+                } else {
+                    window.showToast(data.error || "Failed to delete files", "error");
+                }
+            } catch (err) {
+                window.showToast("Network error during batch delete", "error");
+            }
+        });
+    }
+
+    function closeUserDataModal() {
+        userDataModal.classList.add("hidden");
+    }
+
+    if (closeUserDataModalBtn) closeUserDataModalBtn.addEventListener("click", closeUserDataModal);
+    if (closeUserDataModalBottomBtn) closeUserDataModalBottomBtn.addEventListener("click", closeUserDataModal);
+
+    // Send Warning Notice to User Form
+    if (sendNoticeForm) {
+        sendNoticeForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const userId = manageTargetUserId.value;
+            const deadlineDays = parseInt(noticeDeadlineInput.value, 10) || 2;
+            const title = noticeTitleInput.value.trim();
+            const message = noticeMessageInput.value.trim();
+
+            try {
+                const res = await fetch(`/api/admin/users/${userId}/notice`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        title: title,
+                        message: message,
+                        deadline_days: deadlineDays
+                    })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    window.showToast(`Popup Deletion Notice sent to user! (${deadlineDays}-day deadline)`, "success");
+                } else {
+                    window.showToast(data.error || "Failed to send notice", "error");
+                }
+            } catch (err) {
+                window.showToast("Network error sending warning notice", "error");
+            }
+        });
+    }
+
+    // Purge Old Files Button
+    if (purgeOldFilesBtn) {
+        purgeOldFilesBtn.addEventListener("click", async () => {
+            const userId = manageTargetUserId.value;
+            const days = parseInt(purgeDaysSelect.value, 10);
+            const username = manageUsername.textContent;
+
+            const timeText = days === 0 ? "ALL files" : `files older than ${days} days`;
+            if (!confirm(`Are you sure you want to permanently delete ${timeText} for ${username}?`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/admin/users/${userId}/purge-old`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ days: days })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    window.showToast(data.message, "success");
+                    openUserDataModal(userId, username.replace('@', ''));
+                    loadAdminData();
+                } else {
+                    window.showToast(data.error || "Failed to purge files", "error");
+                }
+            } catch (err) {
+                window.showToast("Network error while purging files", "error");
+            }
+        });
+    }
+
+    async function handleDeleteUserSingleFile(fileId, filename) {
+        if (!confirm(`Are you sure you want to delete '${filename}'?`)) return;
+
+        try {
+            const res = await fetch(`/api/files/${fileId}`, { method: "DELETE" });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                window.showToast(`Deleted '${filename}'`, "success");
+                const userId = manageTargetUserId.value;
+                const username = manageUsername.textContent.replace('@', '');
+                openUserDataModal(userId, username);
+                loadAdminData();
+            } else {
+                window.showToast(data.error || "Failed to delete file", "error");
+            }
+        } catch (err) {
+            window.showToast("Network error deleting file", "error");
         }
     }
 

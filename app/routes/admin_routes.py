@@ -1,7 +1,7 @@
 import os
 from flask import Blueprint, request, jsonify, g
 from app import db
-from app.utils.db_models import User, FileItem
+from app.utils.db_models import User, FileItem, SystemNotice
 from app.utils.auth_guard import require_admin
 
 admin_bp = Blueprint("admin_bp", __name__)
@@ -121,25 +121,138 @@ def assign_file(file_id):
         "file": file_item.to_dict()
     }), 200
 
-@admin_bp.route("/files/claim-all", methods=["POST"])
+@admin_bp.route("/files/batch-assign", methods=["POST"])
 @require_admin
-def claim_all_unassigned():
-    """1-Click: Assign all unassigned/legacy files to a target user"""
+def batch_assign_files():
+    """Admin assigns multiple selected files to a target user at once"""
     data = request.get_json() or {}
+    file_ids = data.get("file_ids", [])
     target_user_id = data.get("user_id")
 
-    target_user = User.query.get(target_user_id)
-    if not target_user:
-        return jsonify({"success": False, "error": "Target user not found"}), 404
+    if not file_ids:
+        return jsonify({"success": False, "error": "No files selected"}), 400
 
-    unassigned_files = FileItem.query.filter(FileItem.user_id.is_(None)).all()
-    for f in unassigned_files:
-        f.user_id = target_user.id
+    target_user = None
+    username = "Unassigned"
+    if target_user_id is not None:
+        target_user = User.query.get(target_user_id)
+        if not target_user:
+            return jsonify({"success": False, "error": "Target user not found"}), 404
+        username = target_user.username
+
+    files = FileItem.query.filter(FileItem.id.in_(file_ids)).all()
+    for f in files:
+        f.user_id = target_user.id if target_user else None
+
+    db.session.commit()
+    return jsonify({
+        "success": True,
+        "message": f"Successfully assigned {len(files)} file(s) to '{username}'!",
+        "count": len(files)
+    }), 200
+
+@admin_bp.route("/files/batch-delete", methods=["POST"])
+@require_admin
+def batch_delete_files():
+    """Admin deletes multiple selected files at once"""
+    data = request.get_json() or {}
+    file_ids = data.get("file_ids", [])
+
+    if not file_ids:
+        return jsonify({"success": False, "error": "No files selected"}), 400
+
+    files = FileItem.query.filter(FileItem.id.in_(file_ids)).all()
+    count = len(files)
+    for f in files:
+        db.session.delete(f)
+
+    db.session.commit()
+    return jsonify({
+        "success": True,
+        "message": f"Successfully deleted {count} file(s)!",
+        "count": count
+    }), 200
+
+@admin_bp.route("/users/<int:user_id>/profile", methods=["GET"])
+@require_admin
+def get_user_profile_data(user_id):
+    """Admin deep inspection: Returns user metadata, files list, and active deletion notices"""
+    user = User.query.get_or_404(user_id)
+    files = FileItem.query.filter_by(user_id=user.id).order_by(FileItem.created_at.desc()).all()
+    notices = SystemNotice.query.filter((SystemNotice.user_id == user.id) | (SystemNotice.user_id.is_(None))).order_by(SystemNotice.created_at.desc()).all()
+
+    return jsonify({
+        "success": True,
+        "user": user.to_dict(),
+        "files": [f.to_dict() for f in files],
+        "notices": [n.to_dict() for n in notices]
+    }), 200
+
+@admin_bp.route("/users/<int:user_id>/notice", methods=["POST"])
+@require_admin
+def send_user_deletion_notice(user_id):
+    """Admin sends a 2-day (or custom deadline) Deletion Warning Popup notice to a user"""
+    data = request.get_json() or {}
+    message = data.get("message", "").strip()
+    title = data.get("title", "⚠️ Important Storage & Data Notice").strip()
+    deadline_days = int(data.get("deadline_days", 2))
+
+    if not message:
+        message = f"Storage Maintenance: Old data is scheduled for cleanup within {deadline_days} days. Please backup or download necessary files."
+
+    target_user_id = user_id if user_id > 0 else None
+
+    new_notice = SystemNotice(
+        user_id=target_user_id,
+        title=title,
+        message=message,
+        deadline_days=deadline_days,
+        notice_type="warning",
+        is_active=True
+    )
+    db.session.add(new_notice)
+    db.session.commit()
+
+    recipient = f"user ID #{user_id}" if target_user_id else "All Platform Users"
+    return jsonify({
+        "success": True,
+        "message": f"Deletion warning popup notice sent to {recipient} (Deadline: {deadline_days} days)!",
+        "notice": new_notice.to_dict()
+    }), 201
+
+@admin_bp.route("/users/<int:user_id>/purge-old", methods=["POST"])
+@require_admin
+def purge_old_user_files(user_id):
+    """Admin purges files belonging to this user older than specified days"""
+    user = User.query.get_or_404(user_id)
+    data = request.get_json() or {}
+    days = int(data.get("days", 30))
+
+    from datetime import datetime, timezone, timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    old_files = FileItem.query.filter(
+        FileItem.user_id == user.id,
+        FileItem.created_at <= cutoff
+    ).all()
+
+    count = len(old_files)
+    for f in old_files:
+        db.session.delete(f)
 
     db.session.commit()
 
     return jsonify({
         "success": True,
-        "message": f"Successfully assigned {len(unassigned_files)} legacy files to user '{target_user.username}'!",
-        "count": len(unassigned_files)
+        "message": f"Successfully deleted {count} file(s) older than {days} days for user '{user.username}'.",
+        "purged_count": count
     }), 200
+
+@admin_bp.route("/notices/<int:notice_id>", methods=["DELETE"])
+@require_admin
+def delete_notice(notice_id):
+    """Admin cancels/deactivates a warning notice"""
+    notice = SystemNotice.query.get_or_404(notice_id)
+    db.session.delete(notice)
+    db.session.commit()
+    return jsonify({"success": True, "message": "Notice removed successfully"}), 200

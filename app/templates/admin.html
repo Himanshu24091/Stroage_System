@@ -147,9 +147,36 @@
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="20 6 9 17 4 12"/>
                     </svg>
-                    <span>Assign Legacy Files to User</span>
+                    <span>Assign All Legacy to User</span>
                 </button>
                 <span id="fileCountBadge" class="filter-chip active">0 Files</span>
+            </div>
+        </div>
+
+        <!-- Sticky / Floating Batch Actions Bar for Files -->
+        <div id="adminFilesBatchBar" class="batch-action-bar hidden">
+            <div class="batch-info">
+                <span id="selectedFilesCount" class="batch-badge">0 Files Selected</span>
+            </div>
+            <div class="batch-actions">
+                <button type="button" id="batchAssignBtn" class="btn-primary btn-sm">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                        <circle cx="8.5" cy="7" r="4"/>
+                        <polyline points="17 11 19 13 23 9"/>
+                    </svg>
+                    <span>Assign Selected to User</span>
+                </button>
+                <button type="button" id="batchDeleteBtn" class="btn-action-delete" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                    <span>Delete Selected</span>
+                </button>
+                <button type="button" id="clearSelectedFilesBtn" class="btn-ghost btn-sm">
+                    <span>Clear</span>
+                </button>
             </div>
         </div>
 
@@ -157,6 +184,9 @@
             <table class="custom-table">
                 <thead>
                     <tr>
+                        <th style="width: 40px; text-align: center;">
+                            <input type="checkbox" id="selectAllAdminFiles" class="custom-checkbox" title="Select All Files">
+                        </th>
                         <th>File Name</th>
                         <th>Category</th>
                         <th>File Size</th>
@@ -167,7 +197,7 @@
                 </thead>
                 <tbody id="adminFilesTableBody">
                     <tr>
-                        <td colspan="6" class="text-center py-6 text-muted">Loading all system files...</td>
+                        <td colspan="7" class="text-center py-6 text-muted">Loading all system files...</td>
                     </tr>
                 </tbody>
             </table>
@@ -274,6 +304,145 @@
                 </button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- User Data Management & Deletion Notice Modal -->
+<div id="userDataModal" class="modal-overlay hidden">
+    <div class="modal-card modal-lg glass-panel">
+        <div class="modal-header">
+            <div class="modal-icon-wrapper purple">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                </svg>
+            </div>
+            <div>
+                <h3 id="userDataModalTitle" class="modal-title">User Data & Maintenance Center</h3>
+                <p id="userDataModalSubtitle" class="modal-subtitle">Inspecting account data & broadcast deletion notices</p>
+            </div>
+            <button id="closeUserDataModalBtn" class="modal-close-btn">&times;</button>
+        </div>
+
+        <div class="modal-body" style="display: flex; flex-direction: column; gap: 20px;">
+            <input type="hidden" id="manageTargetUserId">
+
+            <!-- User Quick Metrics Strip -->
+            <div class="user-metrics-strip">
+                <div>
+                    <span style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 2px;">User Account</span>
+                    <strong id="manageUsername" style="color: var(--cyan-primary); font-size: 1.15rem;">-</strong>
+                </div>
+                <div>
+                    <span style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 2px;">Total Files</span>
+                    <strong id="manageUserFilesCount" style="color: var(--purple-primary); font-size: 1.15rem;">0</strong>
+                </div>
+                <div>
+                    <span style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 2px;">Vault Storage</span>
+                    <strong id="manageUserStorage" style="color: var(--emerald-primary); font-size: 1.15rem;">0 MB</strong>
+                </div>
+            </div>
+
+            <!-- SECTION A: SEND DELETION WARNING POPUP NOTICE -->
+            <div class="glass-panel" style="padding: 16px; border-radius: var(--radius-md); border: 1px solid rgba(245, 158, 11, 0.3); background: rgba(245, 158, 11, 0.04);">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--amber-primary)" stroke-width="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/>
+                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                    <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--amber-primary); margin: 0;">Broadcast Deletion Warning Notice (Popup on User's Webpage)</h4>
+                </div>
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">
+                    This sends an interactive warning popup banner directly onto the user's dashboard notifying them that old records are scheduled for deletion within the given timeframe.
+                </p>
+                <form id="sendNoticeForm" style="display: flex; flex-direction: column; gap: 10px;">
+                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                        <div style="width: 140px;">
+                            <label class="form-label" style="font-size: 0.75rem;">Deadline (Days)</label>
+                            <input type="number" id="noticeDeadlineInput" class="form-input" value="2" min="1" max="90" required>
+                        </div>
+                        <div style="flex: 1; min-width: 220px;">
+                            <label class="form-label" style="font-size: 0.75rem;">Notice Title</label>
+                            <input type="text" id="noticeTitleInput" class="form-input" value="⚠️ Storage Maintenance: Old Data Cleanup Scheduled" required>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="form-label" style="font-size: 0.75rem;">Popup Notice Message Body</label>
+                        <textarea id="noticeMessageInput" class="form-input" rows="2" style="resize: vertical;" required>Storage Maintenance: Old uploaded records are scheduled for deletion within 2 days. Please download or backup necessary files.</textarea>
+                    </div>
+                    <div style="display: flex; justify-content: flex-end;">
+                        <button type="submit" class="btn-primary" style="background: linear-gradient(135deg, #f59e0b, #d97706);">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="22" y1="2" x2="11" y2="13"/>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                            </svg>
+                            <span>Send Warning Popup to User</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- SECTION B: PURGE OLD DATA -->
+            <div class="glass-panel" style="padding: 14px 16px; border-radius: var(--radius-md); display: flex; justify-content: space-between; align-items: center; gap: 16px; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.3); flex-wrap: wrap;">
+                <div>
+                    <h4 style="font-size: 0.9rem; font-weight: 700; color: var(--rose-primary); margin: 0 0 4px 0;">⚡ Bulk Purge Old Records</h4>
+                    <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0;">Permanently delete files of this user older than specified timeframe</p>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <select id="purgeDaysSelect" class="form-input" style="width: 140px; padding: 6px 10px; font-size: 0.8rem;">
+                        <option value="2">Older than 2 Days</option>
+                        <option value="7">Older than 7 Days</option>
+                        <option value="15">Older than 15 Days</option>
+                        <option value="30" selected>Older than 30 Days</option>
+                        <option value="60">Older than 60 Days</option>
+                        <option value="0">Purge ALL Files</option>
+                    </select>
+                    <button type="button" id="purgeOldFilesBtn" class="btn-action-delete" style="padding: 8px 14px; font-weight: 600;">
+                        <span>Purge Files</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- SECTION C: USER'S FILES TABLE WITH MULTI-SELECT -->
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-main); margin: 0;">User Uploaded Files</h4>
+                    <div id="userFilesBatchBar" class="batch-action-bar hidden" style="margin: 0; padding: 6px 14px;">
+                        <span id="userSelectedCount" class="batch-badge">0 Selected</span>
+                        <button type="button" id="userBatchDeleteBtn" class="btn-action-delete" style="padding: 4px 10px; font-size: 0.75rem;">
+                            <span>Delete Selected</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-responsive" style="max-height: 260px; overflow-y: auto;">
+                    <table class="custom-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 36px; text-align: center;">
+                                    <input type="checkbox" id="selectAllUserModalFiles" class="custom-checkbox" title="Select All Files">
+                                </th>
+                                <th>File Name</th>
+                                <th>Category</th>
+                                <th>Size</th>
+                                <th>Upload Date</th>
+                                <th class="text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="userFilesManageBody">
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted">Loading files...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-footer">
+            <button type="button" id="closeUserDataModalBottomBtn" class="btn-secondary">Close</button>
+        </div>
     </div>
 </div>
 {% endblock %}

@@ -722,7 +722,7 @@ input:focus, .form-input:focus {
     gap: 8px;
 }
 
-.modal-body {
+.modal-backdrop .modal-body {
     flex: 1;
     min-height: 380px;
     max-height: 65vh;
@@ -1434,23 +1434,216 @@ input:focus, .form-input:focus {
     .custom-table th, .custom-table td {
         padding: 10px 12px;
     }
-    .custom-table th:nth-child(2),
-    .custom-table td:nth-child(2),
-    .custom-table th:nth-child(6),
-    .custom-table td:nth-child(6) {
-        display: none;
+}
+
+/* ==========================================================================
+   MODAL OVERLAY & POPUP SYSTEM (ADMIN & GLOBAL)
+   ========================================================================== */
+.modal-overlay {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    background: rgba(5, 8, 16, 0.88) !important;
+    backdrop-filter: blur(14px) !important;
+    -webkit-backdrop-filter: blur(14px) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    z-index: 99999 !important;
+    padding: 20px !important;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.modal-overlay.hidden {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+.modal-card {
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(30, 27, 75, 0.98)) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.9), 0 0 35px rgba(6, 182, 212, 0.15) !important;
+    border-radius: var(--radius-xl) !important;
+    width: 100% !important;
+    max-width: 560px;
+    max-height: 88vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    animation: modalPopIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-card.modal-lg {
+    max-width: 860px !important;
+}
+
+@keyframes modalPopIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.95) translateY(12px);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
     }
 }
 
-@media (max-width: 480px) {
-    .custom-table th:nth-child(4),
-    .custom-table td:nth-child(4) {
-        display: none;
-    }
-    .btn-action span {
-        display: none;
-    }
-    .btn-action {
-        padding: 6px 8px;
-    }
+.modal-header {
+    display: flex !important;
+    align-items: center !important;
+    gap: 14px !important;
+    padding: 18px 24px !important;
+    border-bottom: 1px solid var(--border-glass) !important;
+    background: rgba(255, 255, 255, 0.02) !important;
+    flex-shrink: 0 !important;
+}
+
+.modal-title {
+    font-size: 1.2rem !important;
+    font-weight: 700 !important;
+    color: var(--text-main) !important;
+    margin: 0 0 2px 0 !important;
+}
+
+.modal-subtitle {
+    font-size: 0.82rem !important;
+    color: var(--text-muted) !important;
+    margin: 0 !important;
+}
+
+.modal-close-btn {
+    margin-left: auto !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+    border: 1px solid var(--border-glass) !important;
+    border-radius: var(--radius-sm) !important;
+    color: var(--text-muted) !important;
+    width: 32px !important;
+    height: 32px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 1.4rem !important;
+    line-height: 1 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+}
+
+.modal-close-btn:hover {
+    background: rgba(244, 63, 94, 0.2) !important;
+    border-color: rgba(244, 63, 94, 0.4) !important;
+    color: var(--rose-primary) !important;
+    transform: rotate(90deg) !important;
+}
+
+.modal-body {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    padding: 22px 24px !important;
+    overflow-y: auto !important;
+    background: transparent !important;
+    gap: 18px !important;
+    max-height: calc(88vh - 130px) !important;
+    box-sizing: border-box !important;
+}
+
+/* Custom Sleek Dark Scrollbar for Modal and Tables */
+.modal-body::-webkit-scrollbar,
+.table-responsive::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.modal-body::-webkit-scrollbar-track,
+.table-responsive::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb,
+.table-responsive::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover,
+.table-responsive::-webkit-scrollbar-thumb:hover {
+    background: var(--cyan-primary);
+}
+
+.modal-footer {
+    display: flex !important;
+    justify-content: flex-end !important;
+    align-items: center !important;
+    gap: 12px !important;
+    padding: 16px 24px !important;
+    border-top: 1px solid var(--border-glass) !important;
+    background: rgba(0, 0, 0, 0.25) !important;
+    flex-shrink: 0 !important;
+}
+
+/* User Metrics Strip in Data Modal */
+.user-metrics-strip {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 14px !important;
+    background: rgba(0, 0, 0, 0.45) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    padding: 14px 18px !important;
+    border-radius: var(--radius-md) !important;
+}
+
+/* Custom Checkbox */
+.custom-checkbox {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--cyan-primary);
+    cursor: pointer;
+    border-radius: 4px;
+    vertical-align: middle;
+}
+
+/* Batch Action Floating / Sticky Bar */
+.batch-action-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 12px 20px;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15), rgba(139, 92, 246, 0.15));
+    border: 1px solid rgba(6, 182, 212, 0.4);
+    border-radius: var(--radius-md);
+    margin-bottom: 16px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+    animation: fadeIn 0.3s ease;
+    flex-wrap: wrap;
+}
+
+.batch-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.batch-badge {
+    background: rgba(6, 182, 212, 0.2);
+    color: var(--cyan-primary);
+    border: 1px solid rgba(6, 182, 212, 0.4);
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.batch-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
 }
