@@ -1,32 +1,74 @@
 from functools import wraps
-from flask import session, request, jsonify, redirect, url_for
-from config import Config
+from flask import session, request, jsonify, redirect, url_for, g, render_template
+from app.utils.db_models import User
 
-def require_pin(view_func):
+def require_login(view_func):
     """
-    Decorator to protect routes with Master PIN.
-    If Config.ENABLE_AUTH is False (Option 3 toggle), access is automatically granted.
+    Decorator to protect standard user routes ensuring a valid user is logged in.
+    Sets g.current_user for the request context.
     """
     @wraps(view_func)
     def decorated_function(*args, **kwargs):
-        # If Auth is disabled in config, bypass completely
-        if not Config.ENABLE_AUTH:
+        # If logged in as Super Admin, allow viewing or redirect to admin
+        if session.get("auth_type") == "admin":
+            class SuperAdminProxy:
+                id = 0
+                username = "SuperAdmin"
+                email = "admin@vault.system"
+                is_admin = True
+            g.current_user = SuperAdminProxy()
             return view_func(*args, **kwargs)
 
-        # Check session or header token
-        is_authenticated = session.get("is_authenticated", False)
-        header_pin = request.headers.get("X-Master-PIN")
+        user_id = session.get("user_id")
+        if not user_id:
+            if request.path.startswith("/api/"):
+                return jsonify({"success": False, "error": "Authentication required. Please log in."}), 401
+            return redirect(url_for("view_bp.login_page", next=request.url))
 
-        if is_authenticated or (header_pin and header_pin == Config.MASTER_PIN):
-            return view_func(*args, **kwargs)
+        current_user = User.query.get(user_id)
+        if not current_user:
+            session.clear()
+            if request.path.startswith("/api/"):
+                return jsonify({"success": False, "error": "User account not found. Please log in again."}), 401
+            return redirect(url_for("view_bp.login_page"))
 
-        # Handle API vs Browser View redirection
-        if request.path.startswith("/api/"):
-            return jsonify({
-                "success": False,
-                "error": "Unauthorized. Please authenticate with Master PIN."
-            }), 401
-        
-        return redirect(url_for("view_bp.login_page", next=request.url))
+        g.current_user = current_user
+        return view_func(*args, **kwargs)
 
     return decorated_function
+
+def require_admin(view_func):
+    """
+    Decorator to protect admin routes.
+    - If a standard user (e.g. him200) tries to access, BLOCKS them with 403 Forbidden.
+    - Only allows dedicated Super Admin sessions (auth_type == 'admin').
+    """
+    @wraps(view_func)
+    def decorated_function(*args, **kwargs):
+        # CASE 1: Standard User logged in -> STRICTLY BLOCK
+        if session.get("user_id"):
+            current_user = User.query.get(session.get("user_id"))
+            if not current_user or not current_user.is_admin:
+                if request.path.startswith("/api/"):
+                    return jsonify({"success": False, "error": "Forbidden: Standard users cannot access Admin portal."}), 403
+                return render_template("403.html", app_title="Access Denied"), 403
+
+        # CASE 2: Dedicated Super Admin session active
+        if session.get("auth_type") == "admin" and session.get("is_admin"):
+            class SuperAdminProxy:
+                id = 0
+                username = session.get("username", "SuperAdmin")
+                email = "admin@vault.system"
+                is_admin = True
+            g.current_user = SuperAdminProxy()
+            return view_func(*args, **kwargs)
+
+        # CASE 3: Not logged in at all -> Send to dedicated Admin Login
+        if request.path.startswith("/api/"):
+            return jsonify({"success": False, "error": "Super Admin authentication required."}), 401
+        return redirect(url_for("view_bp.admin_login_page"))
+
+    return decorated_function
+
+# Backwards-compatible alias for existing endpoints
+require_pin = require_login

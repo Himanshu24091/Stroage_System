@@ -2,25 +2,26 @@ import os
 import re
 import urllib.parse
 from datetime import datetime, timezone
-from flask import Blueprint, request, jsonify, abort
+from flask import Blueprint, request, jsonify, abort, g
 from app import db
 from app.utils.db_models import FileItem
-from app.utils.auth_guard import require_pin
+from app.utils.auth_guard import require_login
 from app.utils.drive_streamer import extract_drive_id, create_stealth_stream_response, USER_AGENT, is_drive_folder_url, extract_drive_folder_id
-from app.utils.gas_bridge import upload_file_to_gas, delete_file_from_gas, get_storage_stats_from_gas, is_gas_configured, get_folder_files_from_gas
+from app.utils.gas_bridge import upload_file_to_gas, upload_file_from_disk_to_gas, delete_file_from_gas, get_storage_stats_from_gas, is_gas_configured, get_folder_files_from_gas
 import requests
+import shutil
 
 file_bp = Blueprint("file_bp", __name__)
 
 @file_bp.route("", methods=["GET"])
-@require_pin
+@require_login
 def list_files():
-    """List all stored files with search, category filtering, and sorting"""
+    """List stored files for the current authenticated user only"""
     search_query = request.args.get("search", "").strip().lower()
     category = request.args.get("category", "all").strip().lower()
     sort_by = request.args.get("sort", "newest").strip().lower()
 
-    query = FileItem.query
+    query = FileItem.query.filter_by(user_id=g.current_user.id)
 
     if search_query:
         query = query.filter(FileItem.filename.ilike(f"%{search_query}%"))
@@ -40,7 +41,6 @@ def list_files():
     files = query.all()
     file_list = [f.to_dict() for f in files]
 
-    # Calculate summary metrics
     total_files = len(files)
     total_bytes = sum(f.file_size or 0 for f in files)
 
@@ -52,9 +52,9 @@ def list_files():
     }), 200
 
 @file_bp.route("/upload", methods=["POST"])
-@require_pin
+@require_login
 def upload_file():
-    """Handle direct file upload via Google Apps Script bridge"""
+    """Handle direct file upload (legacy fallback)"""
     if "file" not in request.files:
         return jsonify({"success": False, "error": "No file uploaded in form-data"}), 400
 
@@ -68,7 +68,6 @@ def upload_file():
     file_size = len(file_bytes)
 
     if is_gas_configured():
-        # Upload directly to Google Drive via GAS Webhook
         gas_result = upload_file_to_gas(filename, file_bytes, mime_type)
         if not gas_result.get("success"):
             return jsonify({"success": False, "error": gas_result.get("error", "GAS upload failed")}), 500
@@ -77,7 +76,6 @@ def upload_file():
         drive_url = gas_result.get("download_url") or gas_result.get("view_url") or ""
         source_type = "gas_upload"
     else:
-        # Local Storage Fallback Mode
         upload_dir = os.path.join(os.getcwd(), "uploads")
         os.makedirs(upload_dir, exist_ok=True)
         
@@ -90,11 +88,10 @@ def upload_file():
         drive_url = local_path
         source_type = "local_upload"
 
-    # Auto-detect category
     category = FileItem.detect_category(filename, mime_type)
 
-    # Save metadata to database
     new_item = FileItem(
+        user_id=g.current_user.id,
         filename=filename,
         file_size=file_size,
         mime_type=mime_type,
@@ -112,12 +109,128 @@ def upload_file():
         "file": new_item.to_dict()
     }), 201
 
+@file_bp.route("/upload-chunk", methods=["POST"])
+@require_login
+def upload_chunk():
+    """
+    Receives individual 5MB/10MB file chunks from client.
+    Reassembles full file on last chunk and triggers safe multi-part Google Drive upload.
+    Prevents Railway 502 proxy timeouts and browser memory freeze for files up to 2GB.
+    """
+    if "chunk" not in request.files:
+        return jsonify({"success": False, "error": "Missing chunk in form-data"}), 400
+
+    chunk_file = request.files["chunk"]
+    upload_id = request.form.get("upload_id", "").strip()
+    try:
+        chunk_index = int(request.form.get("chunk_index", 0))
+        total_chunks = int(request.form.get("total_chunks", 1))
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "error": "Invalid chunk numerical parameters"}), 400
+
+    filename = request.form.get("filename", "unnamed_file").strip()
+    mime_type = request.form.get("mime_type", "application/octet-stream").strip()
+
+    if not upload_id:
+        return jsonify({"success": False, "error": "Missing upload_id"}), 400
+
+    temp_dir = os.path.join(os.getcwd(), "temp_uploads", upload_id)
+    os.makedirs(temp_dir, exist_ok=True)
+
+    chunk_path = os.path.join(temp_dir, f"chunk_{chunk_index:06d}")
+    chunk_file.save(chunk_path)
+
+    # If more chunks are pending, acknowledge receipt
+    if chunk_index < total_chunks - 1:
+        return jsonify({
+            "success": True,
+            "status": "chunk_received",
+            "chunk_index": chunk_index,
+            "total_chunks": total_chunks
+        }), 200
+
+    # Final chunk received -> Reassemble file on disk with zero memory overhead
+    try:
+        assembled_file = os.path.join(temp_dir, "assembled.bin")
+        with open(assembled_file, "wb") as out_f:
+            for i in range(total_chunks):
+                part_file = os.path.join(temp_dir, f"chunk_{i:06d}")
+                if not os.path.exists(part_file):
+                    return jsonify({"success": False, "error": f"Missing chunk {i} during assembly"}), 400
+                with open(part_file, "rb") as in_f:
+                    while True:
+                        buf = in_f.read(1024 * 1024)
+                        if not buf:
+                            break
+                        out_f.write(buf)
+                try:
+                    os.remove(part_file)
+                except Exception:
+                    pass
+
+        assembled_size = os.path.getsize(assembled_file)
+
+        # Perform Upload (GAS or Local) using disk streaming (RAM remains under 30MB)
+        if is_gas_configured():
+            gas_result = upload_file_from_disk_to_gas(filename, assembled_file, mime_type)
+            # Cleanup temp assembled file
+            if os.path.exists(assembled_file):
+                try:
+                    os.remove(assembled_file)
+                    os.rmdir(temp_dir)
+                except Exception:
+                    pass
+
+            if not gas_result.get("success"):
+                return jsonify({"success": False, "error": gas_result.get("error", "Google Drive upload failed")}), 500
+
+            drive_file_id = gas_result.get("file_id")
+            drive_url = gas_result.get("download_url") or gas_result.get("view_url") or ""
+            source_type = "gas_upload"
+        else:
+            upload_dir = os.path.join(os.getcwd(), "uploads")
+            os.makedirs(upload_dir, exist_ok=True)
+            safe_name = f"{int(datetime.now(timezone.utc).timestamp())}_{filename}"
+            local_path = os.path.join(upload_dir, safe_name)
+            shutil.move(assembled_file, local_path)
+            try:
+                os.rmdir(temp_dir)
+            except Exception:
+                pass
+
+            drive_file_id = None
+            drive_url = local_path
+            source_type = "local_upload"
+
+        category = FileItem.detect_category(filename, mime_type)
+
+        new_item = FileItem(
+            user_id=g.current_user.id,
+            filename=filename,
+            file_size=assembled_size,
+            mime_type=mime_type,
+            category=category,
+            drive_file_id=drive_file_id,
+            drive_url=drive_url,
+            source_type=source_type
+        )
+        db.session.add(new_item)
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "File uploaded and processed successfully!",
+            "file": new_item.to_dict()
+        }), 201
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Failed during chunk reassembly: {str(e)}"}), 500
+
 @file_bp.route("/import-link", methods=["POST"])
-@require_pin
+@require_login
 def import_link():
     """
     Import an existing Google Drive public link (File or Entire Folder).
-    Extracts metadata for instant stealth streaming.
+    Extracts metadata for instant stealth streaming scoped to current user.
     """
     data = request.get_json() or {}
     raw_url = data.get("url", "").strip()
@@ -145,6 +258,7 @@ def import_link():
                 for f in files:
                     cat = FileItem.detect_category(f["filename"], f.get("mime_type", ""))
                     item = FileItem(
+                        user_id=g.current_user.id,
                         filename=f["filename"],
                         file_size=f.get("size", 0),
                         mime_type=f.get("mime_type", "application/octet-stream"),
@@ -178,7 +292,6 @@ def import_link():
     if not drive_id:
         return jsonify({"success": False, "error": "Could not extract a valid Google Drive File ID from link"}), 400
 
-    # Attempt to probe metadata via Google's view page and direct download stream
     filename = custom_name
     file_size = 0
     mime_type = "application/octet-stream"
@@ -190,12 +303,10 @@ def import_link():
             page_resp = requests.get(view_url, headers={"User-Agent": USER_AGENT}, timeout=8)
             if page_resp.status_code == 200:
                 html = page_resp.text
-                # Try OpenGraph title <meta property="og:title" content="...">
                 og_match = re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html) or re.search(r'<meta\s+content="([^"]+)"\s+property="og:title"', html)
                 if og_match:
                     filename = og_match.group(1).strip()
                 else:
-                    # Try <title> tag (e.g. "<title>MyFile.pdf - Google Drive</title>")
                     title_match = re.search(r'<title>(.*?)(?:\s*-\s*Google Drive)?</title>', html)
                     if title_match:
                         raw_title = title_match.group(1).strip()
@@ -208,7 +319,7 @@ def import_link():
     try:
         session = requests.Session()
         session.headers.update({"User-Agent": USER_AGENT})
-        probe_url = f"https://drive.google.com/uc?export=download&id={drive_id}"
+        probe_url = f"https://drive.usercontent.google.com/download?id={drive_id}&export=download&authuser=0&confirm=t"
         resp = session.get(probe_url, stream=True, allow_redirects=True, timeout=8)
         
         cd = resp.headers.get("Content-Disposition", "")
@@ -231,6 +342,7 @@ def import_link():
     category = FileItem.detect_category(filename, mime_type)
 
     new_item = FileItem(
+        user_id=g.current_user.id,
         filename=filename,
         file_size=file_size,
         mime_type=mime_type,
@@ -249,13 +361,16 @@ def import_link():
     }), 201
 
 @file_bp.route("/stream/<int:file_id>", methods=["GET"])
-@require_pin
+@require_login
 def stream_file(file_id: int):
     """
     Stealth Stream proxy for in-browser previews (Video, Audio, PDF, Image).
-    Supports HTTP Range requests for video seeking.
+    Verifies user ownership.
     """
     item = FileItem.query.get_or_404(file_id)
+    if item.user_id != g.current_user.id and not g.current_user.is_admin:
+        abort(403)
+
     range_header = request.headers.get("Range", None)
 
     return create_stealth_stream_response(
@@ -268,13 +383,15 @@ def stream_file(file_id: int):
     )
 
 @file_bp.route("/download/<int:file_id>", methods=["GET"])
-@require_pin
+@require_login
 def download_file(file_id: int):
     """
-    Stealth Download proxy.
-    Streams the file to the client with 'Content-Disposition: attachment'.
+    Stealth Download proxy. Verifies user ownership.
     """
     item = FileItem.query.get_or_404(file_id)
+    if item.user_id != g.current_user.id and not g.current_user.is_admin:
+        abort(403)
+
     range_header = request.headers.get("Range", None)
 
     return create_stealth_stream_response(
@@ -287,12 +404,13 @@ def download_file(file_id: int):
     )
 
 @file_bp.route("/<int:file_id>", methods=["DELETE"])
-@require_pin
+@require_login
 def delete_file(file_id: int):
-    """Delete file from database and trigger deletion from Google Drive if uploaded via GAS"""
+    """Delete file from database and trigger deletion from Google Drive. Verifies ownership."""
     item = FileItem.query.get_or_404(file_id)
+    if item.user_id != g.current_user.id and not g.current_user.is_admin:
+        return jsonify({"success": False, "error": "Unauthorized to delete this file"}), 403
 
-    # If file was uploaded via GAS, delete from Google Drive too
     if item.source_type == "gas_upload" and item.drive_file_id:
         delete_file_from_gas(item.drive_file_id)
 
@@ -305,11 +423,11 @@ def delete_file(file_id: int):
     }), 200
 
 @file_bp.route("/storage-stats", methods=["GET"])
-@require_pin
+@require_login
 def storage_stats():
-    """Fetch storage metrics from DB and Google Drive"""
-    total_files = FileItem.query.count()
-    total_bytes = db.session.query(db.func.sum(FileItem.file_size)).scalar() or 0
+    """Fetch storage metrics for the currently authenticated user"""
+    total_files = FileItem.query.filter_by(user_id=g.current_user.id).count()
+    total_bytes = db.session.query(db.func.sum(FileItem.file_size)).filter(FileItem.user_id == g.current_user.id).scalar() or 0
 
     gas_stats = get_storage_stats_from_gas()
 

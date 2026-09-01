@@ -1,97 +1,146 @@
 /**
- * ==============================================================================
- * STEALTH CLOUD VAULT - AUTH & PIN CONTROLLER
- * ==============================================================================
+ * Stealth Cloud Vault - User Authentication JavaScript
  */
-
 document.addEventListener("DOMContentLoaded", () => {
+    const tabLoginBtn = document.getElementById("tabLoginBtn");
+    const tabRegisterBtn = document.getElementById("tabRegisterBtn");
     const loginForm = document.getElementById("loginForm");
-    const pinInput = document.getElementById("pinInput");
-    const togglePinVis = document.getElementById("togglePinVis");
-    const authCard = document.querySelector(".auth-card");
-    const authErrorMessage = document.getElementById("authErrorMessage");
-    const errorText = document.getElementById("errorText");
-    const unlockBtn = document.getElementById("unlockBtn");
+    const registerForm = document.getElementById("registerForm");
+
+    // Login Form Elements
+    const loginIdentifier = document.getElementById("loginIdentifier");
+    const loginPassword = document.getElementById("loginPassword");
+    const loginErrorMessage = document.getElementById("loginErrorMessage");
+    const loginErrorText = document.getElementById("loginErrorText");
+    const loginSubmitBtn = document.getElementById("loginSubmitBtn");
+
+    // Register Form Elements
+    const regUsername = document.getElementById("regUsername");
+    const regEmail = document.getElementById("regEmail");
+    const regPassword = document.getElementById("regPassword");
+    const regErrorMessage = document.getElementById("regErrorMessage");
+    const regErrorText = document.getElementById("regErrorText");
+    const registerSubmitBtn = document.getElementById("registerSubmitBtn");
+
+    // Global Logout button
     const logoutBtn = document.getElementById("logoutBtn");
 
-    // Toggle PIN visibility
-    if (togglePinVis && pinInput) {
-        togglePinVis.addEventListener("click", () => {
-            if (pinInput.type === "password") {
-                pinInput.type = "text";
-                togglePinVis.style.color = "var(--cyan-primary)";
-            } else {
-                pinInput.type = "password";
-                togglePinVis.style.color = "var(--text-dim)";
-            }
+    // 1. Tab Switching
+    if (tabLoginBtn && tabRegisterBtn) {
+        tabLoginBtn.addEventListener("click", () => {
+            tabLoginBtn.classList.add("active");
+            tabRegisterBtn.classList.remove("active");
+            loginForm.classList.remove("hidden");
+            registerForm.classList.add("hidden");
+            if (loginIdentifier) loginIdentifier.focus();
+        });
+
+        tabRegisterBtn.addEventListener("click", () => {
+            tabRegisterBtn.classList.add("active");
+            tabLoginBtn.classList.remove("active");
+            registerForm.classList.remove("hidden");
+            loginForm.classList.add("hidden");
+            if (regUsername) regUsername.focus();
         });
     }
 
-    // Login Form Submit
-    if (loginForm && pinInput) {
+    // 2. Password Visibility Toggles
+    document.querySelectorAll(".password-toggle-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const targetId = btn.dataset.target;
+            const input = document.getElementById(targetId);
+            if (input) {
+                if (input.type === "password") {
+                    input.type = "text";
+                    btn.style.color = "var(--cyan-primary)";
+                } else {
+                    input.type = "password";
+                    btn.style.color = "var(--text-dim)";
+                }
+            }
+        });
+    });
+
+    // 3. Login Submission
+    if (loginForm) {
         loginForm.addEventListener("submit", async (e) => {
             e.preventDefault();
-            const pin = pinInput.value.trim();
+            const identifier = loginIdentifier.value.trim();
+            const password = loginPassword.value.trim();
 
-            if (!pin) return;
+            if (!identifier || !password) return;
 
-            // UI Loading state
-            if (unlockBtn) {
-                unlockBtn.disabled = true;
-                unlockBtn.innerHTML = `
-                    <div class="spinner-ring" style="width: 16px; height: 16px; border-width: 2px;"></div>
-                    <span>Verifying...</span>
-                `;
-            }
+            loginSubmitBtn.disabled = true;
+            loginSubmitBtn.innerHTML = `<span>Signing in...</span>`;
+            loginErrorMessage.classList.add("hidden");
 
             try {
-                const res = await fetch("/api/auth/verify", {
+                const res = await fetch("/api/auth/login", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ pin })
+                    body: JSON.stringify({ identifier, password })
                 });
 
                 const data = await res.json();
 
                 if (res.ok && data.success) {
-                    // Redirect to dashboard or next param
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const nextUrl = urlParams.get("next") || "/";
-                    window.location.href = nextUrl;
+                    window.location.href = "/";
                 } else {
-                    // Trigger error & shake
-                    if (authErrorMessage && errorText) {
-                        errorText.textContent = data.error || "Incorrect PIN. Access denied.";
-                        authErrorMessage.classList.remove("hidden");
-                    }
-                    if (authCard) {
-                        authCard.classList.add("shake");
-                        setTimeout(() => authCard.classList.remove("shake"), 500);
-                    }
-                    pinInput.value = "";
-                    pinInput.focus();
+                    loginErrorText.textContent = data.error || "Invalid username/email or password";
+                    loginErrorMessage.classList.remove("hidden");
+                    loginSubmitBtn.disabled = false;
+                    loginSubmitBtn.innerHTML = `<span>Sign In to Vault</span>`;
                 }
             } catch (err) {
-                if (authErrorMessage && errorText) {
-                    errorText.textContent = "Server connection error.";
-                    authErrorMessage.classList.remove("hidden");
-                }
-            } finally {
-                if (unlockBtn) {
-                    unlockBtn.disabled = false;
-                    unlockBtn.innerHTML = `
-                        <span>Unlock Vault</span>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="5" y1="12" x2="19" y2="12"/>
-                            <polyline points="12 5 19 12 12 19"/>
-                        </svg>
-                    `;
-                }
+                loginErrorText.textContent = "Network connection error. Try again.";
+                loginErrorMessage.classList.remove("hidden");
+                loginSubmitBtn.disabled = false;
+                loginSubmitBtn.innerHTML = `<span>Sign In to Vault</span>`;
             }
         });
     }
 
-    // Logout Handler
+    // 4. Register Submission
+    if (registerForm) {
+        registerForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const username = regUsername.value.trim();
+            const email = regEmail.value.trim();
+            const password = regPassword.value.trim();
+
+            if (!username || !email || !password) return;
+
+            registerSubmitBtn.disabled = true;
+            registerSubmitBtn.innerHTML = `<span>Creating vault...</span>`;
+            regErrorMessage.classList.add("hidden");
+
+            try {
+                const res = await fetch("/api/auth/register", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username, email, password })
+                });
+
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    window.location.href = "/";
+                } else {
+                    regErrorText.textContent = data.error || "Registration failed. Try again.";
+                    regErrorMessage.classList.remove("hidden");
+                    registerSubmitBtn.disabled = false;
+                    registerSubmitBtn.innerHTML = `<span>Create My Private Vault</span>`;
+                }
+            } catch (err) {
+                regErrorText.textContent = "Network connection error. Try again.";
+                regErrorMessage.classList.remove("hidden");
+                registerSubmitBtn.disabled = false;
+                registerSubmitBtn.innerHTML = `<span>Create My Private Vault</span>`;
+            }
+        });
+    }
+
+    // 5. Logout Action
     if (logoutBtn) {
         logoutBtn.addEventListener("click", async () => {
             try {

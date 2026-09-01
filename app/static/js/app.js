@@ -350,7 +350,12 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // 3. DROPZONE & MULTIPART CHUNKED UPLOAD
+    // 3. DROPZONE & BATCH MULTI-FILE CHUNKED UPLOAD
+    const batchQueueStatus = document.getElementById("batchQueueStatus");
+    const batchRemainingText = document.getElementById("batchRemainingText");
+    let uploadQueue = [];
+    let isUploading = false;
+
     if (dropzone && fileInput) {
         dropzone.addEventListener("click", () => fileInput.click());
 
@@ -374,76 +379,123 @@ document.addEventListener("DOMContentLoaded", () => {
             const dt = e.dataTransfer;
             const files = dt.files;
             if (files && files.length > 0) {
-                handleFileUpload(files[0]);
+                enqueueFiles(Array.from(files));
             }
         });
 
         fileInput.addEventListener("change", (e) => {
             if (fileInput.files && fileInput.files.length > 0) {
-                handleFileUpload(fileInput.files[0]);
+                enqueueFiles(Array.from(fileInput.files));
             }
         });
     }
 
-    function handleFileUpload(file) {
-        if (!file) return;
+    function enqueueFiles(files) {
+        if (!files || files.length === 0) return;
+        uploadQueue.push(...files);
+        if (!isUploading) {
+            processUploadQueue();
+        }
+    }
+
+    async function processUploadQueue() {
+        if (uploadQueue.length === 0) {
+            isUploading = false;
+            return;
+        }
+
+        isUploading = true;
+        const totalBatch = uploadQueue.length;
+        let completedCount = 0;
 
         uploadProgressCard.classList.remove("hidden");
+
+        while (uploadQueue.length > 0) {
+            const file = uploadQueue.shift();
+            const currentFileNum = completedCount + 1;
+            const remainingCount = uploadQueue.length;
+
+            if (batchQueueStatus) batchQueueStatus.textContent = `Batch: ${currentFileNum} / ${totalBatch}`;
+            if (batchRemainingText) batchRemainingText.textContent = `${remainingCount} remaining in queue`;
+
+            try {
+                await uploadSingleFileChunked(file);
+                completedCount++;
+            } catch (err) {
+                console.error("File upload error:", err);
+                window.showToast(`Failed to upload ${file.name}: ${err.message}`, "error");
+            }
+        }
+
+        window.showToast(`Batch completed! ${completedCount} file(s) saved to vault.`, "success");
+        setTimeout(() => {
+            uploadProgressCard.classList.add("hidden");
+        }, 1500);
+
+        if (fileInput) fileInput.value = "";
+        isUploading = false;
+        loadFiles();
+        loadStorageStats();
+    }
+
+    async function uploadSingleFileChunked(file) {
         uploadFilename.textContent = file.name;
         uploadPercentage.textContent = "0%";
         uploadProgressBar.style.width = "0%";
-        uploadStatusText.textContent = "Initiating upload bridge...";
-        
+        uploadStatusText.textContent = "Preparing chunked stream...";
+
+        const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB per chunk (prevents timeouts & memory spikes)
+        const totalSize = file.size;
+        const totalChunks = Math.max(1, Math.ceil(totalSize / CHUNK_SIZE));
+        const uploadId = "up_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
         const startTime = Date.now();
-        const formData = new FormData();
-        formData.append("file", file);
 
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", "/api/files/upload", true);
+        let uploadedBytes = 0;
 
-        xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) {
-                const percent = Math.round((e.loaded / e.total) * 100);
-                uploadPercentage.textContent = `${percent}%`;
-                uploadProgressBar.style.width = `${percent}%`;
+        for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+            const start = chunkIndex * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, totalSize);
+            const chunkBlob = file.slice(start, end);
 
-                const elapsedSeconds = (Date.now() - startTime) / 1000;
-                if (elapsedSeconds > 0.5) {
-                    const bytesPerSec = e.loaded / elapsedSeconds;
-                    const mbPerSec = (bytesPerSec / (1024 * 1024)).toFixed(2);
-                    uploadSpeed.textContent = `${mbPerSec} MB/s`;
-                }
+            const formData = new FormData();
+            formData.append("chunk", chunkBlob);
+            formData.append("upload_id", uploadId);
+            formData.append("chunk_index", chunkIndex);
+            formData.append("total_chunks", totalChunks);
+            formData.append("total_size", totalSize);
+            formData.append("filename", file.name);
+            formData.append("mime_type", file.type || "application/octet-stream");
 
-                if (percent >= 100) {
-                    uploadStatusText.textContent = "Processing and streaming to Google Drive...";
-                }
-            }
-        };
-
-        xhr.onload = () => {
-            if (xhr.status === 200 || xhr.status === 201) {
-                const res = JSON.parse(xhr.responseText);
-                window.showToast(`Uploaded '${file.name}' successfully!`, "success");
-                uploadProgressCard.classList.add("hidden");
-                fileInput.value = "";
-                loadFiles();
+            const isLastChunk = (chunkIndex === totalChunks - 1);
+            if (isLastChunk) {
+                uploadStatusText.textContent = "Finalizing & streaming to Google Drive...";
             } else {
-                let errText = "Upload failed";
-                try {
-                    const res = JSON.parse(xhr.responseText);
-                    errText = res.error || errText;
-                } catch(e) {}
-                window.showToast(errText, "error");
-                uploadStatusText.textContent = errText;
+                uploadStatusText.textContent = `Uploading chunk ${chunkIndex + 1} of ${totalChunks}...`;
             }
-        };
 
-        xhr.onerror = () => {
-            window.showToast("Network error during file upload", "error");
-            uploadProgressCard.classList.add("hidden");
-        };
+            const response = await fetch("/api/files/upload-chunk", {
+                method: "POST",
+                body: formData
+            });
 
-        xhr.send(formData);
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || `Upload failed on chunk ${chunkIndex + 1}`);
+            }
+
+            uploadedBytes += (end - start);
+            const percent = Math.min(100, Math.round((uploadedBytes / totalSize) * 100));
+            uploadPercentage.textContent = `${percent}%`;
+            uploadProgressBar.style.width = `${percent}%`;
+
+            const elapsedSeconds = (Date.now() - startTime) / 1000;
+            if (elapsedSeconds > 0.5) {
+                const bytesPerSec = uploadedBytes / elapsedSeconds;
+                const mbPerSec = (bytesPerSec / (1024 * 1024)).toFixed(2);
+                uploadSpeed.textContent = `${mbPerSec} MB/s`;
+            }
+        }
     }
 
     // 4. IMPORT GOOGLE DRIVE LINK FORM

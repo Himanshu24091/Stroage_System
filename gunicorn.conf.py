@@ -4,8 +4,11 @@ import os
 port = os.getenv("PORT", "5000")
 bind = f"0.0.0.0:{port}"
 
-# Concurrency & Performance Settings
-workers = 4
-threads = 2
-timeout = 300
-keepalive = 5
+# Concurrency & Performance Settings (Optimized to stay well below 512MB RAM on Railway)
+workers = 2
+threads = 4
+worker_class = "gthread"
+timeout = 600
+keepalive = 65
+max_requests = 1000
+max_requests_jitter = 50

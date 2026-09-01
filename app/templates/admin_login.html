@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Super Admin Access | {{ app_title }}{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="auth-card glass-panel admin-auth-card">
+        <!-- Admin Header -->
+        <div class="auth-header">
+            <div class="admin-badge mb-3">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                <span>SUPER ADMIN PORTAL</span>
+            </div>
+            <h2 class="auth-title">Administrative Access</h2>
+            <p class="auth-subtitle">Enter Master Security PIN or Admin Credentials to unlock the management dashboard</p>
+        </div>
+
+        <!-- Master PIN Quick Login Form -->
+        <form id="adminPinForm" class="auth-form">
+            <div class="form-group">
+                <label for="adminPinInput" class="form-label">Master Security PIN</label>
+                <div class="input-icon-wrapper">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                    <input 
+                        type="password" 
+                        id="adminPinInput" 
+                        class="form-input with-icon" 
+                        placeholder="Enter Master PIN (Default: 1234)" 
+                        autofocus
+                        required
+                    >
+                    <button type="button" class="password-toggle-btn" onclick="togglePassVisibility('adminPinInput', this)" title="Toggle visibility">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div id="adminErrorMessage" class="auth-error hidden">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span id="adminErrorText">Invalid Security PIN</span>
+            </div>
+
+            <button type="submit" id="adminSubmitBtn" class="btn-primary btn-full btn-amber">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                <span>Authorize & Enter Admin Panel</span>
+            </button>
+        </form>
+
+        <div class="auth-footer">
+            <a href="/login" class="text-sm text-cyan hover:underline">
+                &larr; Switch to Standard User Login
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+    function togglePassVisibility(inputId, btn) {
+        const input = document.getElementById(inputId);
+        if (!input) return;
+
+        const eyeIcon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+        const eyeOffIcon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+
+        if (input.type === 'password') {
+            input.type = 'text';
+            btn.innerHTML = eyeOffIcon;
+            btn.style.color = 'var(--amber-primary)';
+        } else {
+            input.type = 'password';
+            btn.innerHTML = eyeIcon;
+            btn.style.color = 'var(--text-dim)';
+        }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+        const adminPinForm = document.getElementById("adminPinForm");
+        const adminPinInput = document.getElementById("adminPinInput");
+        const adminErrorMessage = document.getElementById("adminErrorMessage");
+        const adminErrorText = document.getElementById("adminErrorText");
+        const adminSubmitBtn = document.getElementById("adminSubmitBtn");
+
+        if (adminPinForm) {
+            adminPinForm.addEventListener("submit", async (e) => {
+                e.preventDefault();
+                const pin = adminPinInput.value.trim();
+                if (!pin) return;
+
+                adminSubmitBtn.disabled = true;
+                adminSubmitBtn.innerHTML = `<span>Verifying credentials...</span>`;
+                adminErrorMessage.classList.add("hidden");
+
+                try {
+                    const res = await fetch("/api/auth/admin-login", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ pin })
+                    });
+
+                    const data = await res.json();
+                    if (res.ok && data.success) {
+                        window.location.href = data.redirect || "/admin";
+                    } else {
+                        adminErrorText.textContent = data.error || "Invalid Security PIN";
+                        adminErrorMessage.classList.remove("hidden");
+                        adminSubmitBtn.disabled = false;
+                        adminSubmitBtn.innerHTML = `<span>Authorize & Enter Admin Panel</span>`;
+                    }
+                } catch (err) {
+                    adminErrorText.textContent = "Network error. Try again.";
+                    adminErrorMessage.classList.remove("hidden");
+                    adminSubmitBtn.disabled = false;
+                    adminSubmitBtn.innerHTML = `<span>Authorize & Enter Admin Panel</span>`;
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}

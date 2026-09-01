@@ -26,10 +26,12 @@ def create_app(config_class=Config):
     from app.routes.view_routes import view_bp
     from app.routes.auth_routes import auth_bp
     from app.routes.file_routes import file_bp
+    from app.routes.admin_routes import admin_bp
 
     app.register_blueprint(view_bp)
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(file_bp, url_prefix="/api/files")
+    app.register_blueprint(admin_bp, url_prefix="/api/admin")
 
     # Global Health Check endpoint
     @app.route("/api/health")
@@ -41,9 +43,16 @@ def create_app(config_class=Config):
             "database": "connected"
         }), 200
 
-    # Ensure tables are created
+    # Ensure tables are created and schema is migrated
     with app.app_context():
-        from app.utils.db_models import FileItem
+        from app.utils.db_models import User, FileItem
         db.create_all()
+        try:
+            from sqlalchemy import text
+            with db.engine.connect() as conn:
+                conn.execute(text("ALTER TABLE file_items ADD COLUMN user_id INTEGER REFERENCES users(id);"))
+                conn.commit()
+        except Exception:
+            pass  # Column already exists
 
     return app

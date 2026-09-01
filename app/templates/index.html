@@ -96,23 +96,27 @@
                                 <path d="m8 17 4-4 4 4"/>
                             </svg>
                         </div>
-                        <h3 class="dropzone-title">Drag & drop large files here, or <span class="browse-link">browse</span></h3>
-                        <p class="dropzone-subtitle">Direct upload to Google Drive with automated stealth streaming support (Up to 2GB)</p>
+                        <h3 class="dropzone-title">Drag & drop multiple files here, or <span class="browse-link">browse</span></h3>
+                        <p class="dropzone-subtitle">Batch multi-file uploads with automated 5MB chunking & stealth proxy (Up to 2GB per file)</p>
                     </div>
                 </div>
 
-                <!-- Live Upload Progress Card -->
+                <!-- Live Multi-File Batch Upload Progress Card -->
                 <div id="uploadProgressCard" class="progress-card hidden">
+                    <div class="progress-header-row">
+                        <span id="batchQueueStatus" class="badge-queue">Batch Queue: 1 / 1</span>
+                        <div class="progress-percent" id="uploadPercentage">0%</div>
+                    </div>
                     <div class="progress-info-row">
                         <div class="progress-file-name" id="uploadFilename">sample_large_video.mp4</div>
-                        <div class="progress-percent" id="uploadPercentage">0%</div>
+                        <span id="uploadSpeed" class="speed-indicator">0 MB/s</span>
                     </div>
                     <div class="progress-bar-track">
                         <div id="uploadProgressBar" class="progress-bar-fill" style="width: 0%"></div>
                     </div>
                     <div class="progress-status-row">
-                        <span id="uploadSpeed">0 MB/s</span>
-                        <span id="uploadStatusText">Streaming data to storage bridge...</span>
+                        <span id="uploadStatusText">Preparing chunked stream...</span>
+                        <span id="batchRemainingText">0 remaining</span>
                     </div>
                 </div>
             </div>
