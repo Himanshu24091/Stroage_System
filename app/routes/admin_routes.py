@@ -76,23 +76,70 @@ def delete_user(user_id):
         "message": f"User '{username}' and all associated vault files deleted successfully"
     }), 200
 
-@admin_bp.route("/users/<int:user_id>/toggle-admin", methods=["POST"])
+@admin_bp.route("/files", methods=["GET"])
 @require_admin
-def toggle_admin(user_id):
-    """Promote or demote a user to/from Admin status"""
-    target_user = User.query.get(user_id)
-    if not target_user:
-        return jsonify({"success": False, "error": "User not found"}), 404
+def list_all_files():
+    """Returns all files in the system with owner information (including legacy uploads)"""
+    files = FileItem.query.order_by(FileItem.created_at.desc()).all()
+    user_map = {u.id: u.username for u in User.query.all()}
 
-    if target_user.id == g.current_user.id:
-        return jsonify({"success": False, "error": "Cannot modify your own admin privileges"}), 400
+    file_list = []
+    for f in files:
+        item = f.to_dict()
+        item["owner_username"] = user_map.get(f.user_id, "Unassigned (Legacy)")
+        item["is_unassigned"] = (f.user_id is None)
+        file_list.append(item)
 
-    target_user.is_admin = not target_user.is_admin
-    db.session.commit()
-
-    role = "Admin" if target_user.is_admin else "Regular User"
     return jsonify({
         "success": True,
-        "message": f"User '{target_user.username}' role updated to {role}",
-        "is_admin": target_user.is_admin
+        "count": len(file_list),
+        "files": file_list
+    }), 200
+
+@admin_bp.route("/files/<int:file_id>/assign", methods=["POST"])
+@require_admin
+def assign_file(file_id):
+    """Admin assigns or transfers a file to a specific user"""
+    file_item = FileItem.query.get_or_404(file_id)
+    data = request.get_json() or {}
+    target_user_id = data.get("user_id")
+
+    if target_user_id is not None:
+        target_user = User.query.get(target_user_id)
+        if not target_user:
+            return jsonify({"success": False, "error": "Target user not found"}), 404
+        file_item.user_id = target_user.id
+        username = target_user.username
+    else:
+        file_item.user_id = None
+        username = "Unassigned"
+
+    db.session.commit()
+    return jsonify({
+        "success": True,
+        "message": f"File '{file_item.filename}' assigned to '{username}' successfully!",
+        "file": file_item.to_dict()
+    }), 200
+
+@admin_bp.route("/files/claim-all", methods=["POST"])
+@require_admin
+def claim_all_unassigned():
+    """1-Click: Assign all unassigned/legacy files to a target user"""
+    data = request.get_json() or {}
+    target_user_id = data.get("user_id")
+
+    target_user = User.query.get(target_user_id)
+    if not target_user:
+        return jsonify({"success": False, "error": "Target user not found"}), 404
+
+    unassigned_files = FileItem.query.filter(FileItem.user_id.is_(None)).all()
+    for f in unassigned_files:
+        f.user_id = target_user.id
+
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "message": f"Successfully assigned {len(unassigned_files)} legacy files to user '{target_user.username}'!",
+        "count": len(unassigned_files)
     }), 200

@@ -60,8 +60,8 @@ def admin_login():
     data = request.get_json() or {}
     pin = data.get("pin", "").strip()
 
-    expected_pin = getattr(Config, "MASTER_PIN", "1234")
-    admin_secret = getattr(Config, "ADMIN_SECRET", expected_pin)
+    expected_pin = str(getattr(Config, "MASTER_PIN", "1234")).strip()
+    admin_secret = str(getattr(Config, "ADMIN_SECRET", expected_pin)).strip()
 
     # Allow login with Master PIN OR Master Admin Key
     if pin and (pin == expected_pin or pin == admin_secret):

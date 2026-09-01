@@ -2,15 +2,30 @@
  * Stealth Cloud Vault - Admin Control Dashboard JavaScript
  */
 document.addEventListener("DOMContentLoaded", () => {
+    // Top Stats
     const adminTotalUsers = document.getElementById("adminTotalUsers");
     const adminTotalFiles = document.getElementById("adminTotalFiles");
     const adminTotalStorage = document.getElementById("adminTotalStorage");
+    const refreshAdminBtn = document.getElementById("refreshAdminBtn");
+
+    // Tab buttons
+    const adminTabUsersBtn = document.getElementById("adminTabUsersBtn");
+    const adminTabFilesBtn = document.getElementById("adminTabFilesBtn");
+    const adminUsersSection = document.getElementById("adminUsersSection");
+    const adminFilesSection = document.getElementById("adminFilesSection");
+
+    // User table elements
     const usersTableBody = document.getElementById("usersTableBody");
     const adminUserSearch = document.getElementById("adminUserSearch");
     const userCountBadge = document.getElementById("userCountBadge");
-    const refreshAdminBtn = document.getElementById("refreshAdminBtn");
 
-    // Modal elements
+    // File table elements
+    const adminFilesTableBody = document.getElementById("adminFilesTableBody");
+    const adminFileSearch = document.getElementById("adminFileSearch");
+    const fileCountBadge = document.getElementById("fileCountBadge");
+    const claimAllFilesBtn = document.getElementById("claimAllFilesBtn");
+
+    // Password Modal elements
     const resetModal = document.getElementById("resetPasswordModal");
     const resetForm = document.getElementById("resetPasswordForm");
     const targetUserIdInput = document.getElementById("targetUserId");
@@ -23,9 +38,36 @@ document.addEventListener("DOMContentLoaded", () => {
     const closeResetModalBtn = document.getElementById("closeResetModalBtn");
     const cancelResetBtn = document.getElementById("cancelResetBtn");
 
-    let allUsers = [];
+    // Assign File Modal elements
+    const assignModal = document.getElementById("assignFileModal");
+    const assignForm = document.getElementById("assignFileForm");
+    const assignTargetFileId = document.getElementById("assignTargetFileId");
+    const assignFileSubtitle = document.getElementById("assignFileSubtitle");
+    const assignUserSelect = document.getElementById("assignUserSelect");
+    const closeAssignModalBtn = document.getElementById("closeAssignModalBtn");
+    const cancelAssignBtn = document.getElementById("cancelAssignBtn");
 
-    // 1. Fetch & Render Admin Stats & Users
+    let allUsers = [];
+    let allFiles = [];
+
+    // 1. Tab Switching
+    if (adminTabUsersBtn && adminTabFilesBtn) {
+        adminTabUsersBtn.addEventListener("click", () => {
+            adminTabUsersBtn.classList.add("active");
+            adminTabFilesBtn.classList.remove("active");
+            adminUsersSection.classList.remove("hidden");
+            adminFilesSection.classList.add("hidden");
+        });
+
+        adminTabFilesBtn.addEventListener("click", () => {
+            adminTabFilesBtn.classList.add("active");
+            adminTabUsersBtn.classList.remove("active");
+            adminFilesSection.classList.remove("hidden");
+            adminUsersSection.classList.add("hidden");
+        });
+    }
+
+    // 2. Fetch & Render Admin Data
     async function loadAdminData() {
         try {
             // Load stats
@@ -43,8 +85,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 const data = await usersRes.json();
                 allUsers = data.users || [];
                 renderUsers(allUsers);
+                updateUserSelectDropdown(allUsers);
             } else if (usersRes.status === 403) {
-                window.location.href = "/";
+                window.location.href = "/admin/login";
+            }
+
+            // Load all files (including legacy unassigned)
+            const filesRes = await fetch("/api/admin/files");
+            if (filesRes.ok) {
+                const fileData = await filesRes.json();
+                allFiles = fileData.files || [];
+                renderFiles(allFiles);
             }
         } catch (err) {
             console.error("Admin data load error:", err);
@@ -112,25 +163,106 @@ document.addEventListener("DOMContentLoaded", () => {
             `;
         }).join("");
 
-        // Attach action listeners
         document.querySelectorAll(".reset-pass-btn").forEach(btn => {
-            btn.addEventListener("click", () => {
-                const userId = btn.dataset.id;
-                const username = btn.dataset.username;
-                openResetModal(userId, username);
-            });
+            btn.addEventListener("click", () => openResetModal(btn.dataset.id, btn.dataset.username));
         });
 
         document.querySelectorAll(".delete-user-btn").forEach(btn => {
-            btn.addEventListener("click", () => {
-                const userId = btn.dataset.id;
-                const username = btn.dataset.username;
-                handleDeleteUser(userId, username);
-            });
+            btn.addEventListener("click", () => handleDeleteUser(btn.dataset.id, btn.dataset.username));
         });
     }
 
-    // 2. Search Filter
+    function renderFiles(files) {
+        fileCountBadge.textContent = `${files.length} File${files.length === 1 ? '' : 's'}`;
+
+        if (files.length === 0) {
+            adminFilesTableBody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center py-6 text-muted">No vault files found in the database.</td>
+                </tr>
+            `;
+            return;
+        }
+
+        adminFilesTableBody.innerHTML = files.map(file => {
+            const dateStr = file.created_at ? new Date(file.created_at).toLocaleDateString("en-US", { month: 'short', day: 'numeric', year: 'numeric' }) : "N/A";
+            const sizeStr = formatBytes(file.file_size || 0);
+
+            const isUnassigned = file.is_unassigned;
+            const ownerHtml = isUnassigned 
+                ? `<span class="role-badge" style="background: rgba(245, 158, 11, 0.15); color: var(--amber-primary); border: 1px solid rgba(245, 158, 11, 0.3);">⚠️ Unassigned (Legacy)</span>`
+                : `<span class="role-badge role-user" style="color: var(--cyan-primary);">@${escapeHtml(file.owner_username)}</span>`;
+
+            return `
+                <tr class="user-row">
+                    <td>
+                        <div class="user-cell">
+                            <div class="stat-icon-wrapper cyan" style="width: 32px; height: 32px; border-radius: 6px;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <div class="user-name-text" title="${escapeHtml(file.filename)}">${escapeHtml(file.filename)}</div>
+                                <div class="user-id-text">ID: #${file.id} • ${escapeHtml(file.mime_type || '')}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td><span class="role-badge role-user">${escapeHtml(file.category || 'other')}</span></td>
+                    <td><span class="metric-highlight">${sizeStr}</span></td>
+                    <td>${ownerHtml}</td>
+                    <td class="text-muted text-sm">${dateStr}</td>
+                    <td class="text-right">
+                        <div class="action-buttons-group">
+                            <a href="/api/files/download/${file.id}" target="_blank" class="btn-action" title="Download File">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="7 10 12 15 17 10"/>
+                                    <line x1="12" y1="15" x2="12" y2="3"/>
+                                </svg>
+                            </a>
+                            <button type="button" class="btn-action assign-single-file-btn" data-id="${file.id}" data-filename="${escapeHtml(file.filename)}" title="Assign / Transfer to User">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                    <circle cx="8.5" cy="7" r="4"/>
+                                    <polyline points="17 11 19 13 23 9"/>
+                                </svg>
+                                <span>Assign User</span>
+                            </button>
+                            <button type="button" class="btn-action-delete delete-file-btn" data-id="${file.id}" data-filename="${escapeHtml(file.filename)}" title="Delete File">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="3 6 5 6 21 6"/>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join("");
+
+        document.querySelectorAll(".assign-single-file-btn").forEach(btn => {
+            btn.addEventListener("click", () => openAssignModal(btn.dataset.id, btn.dataset.filename));
+        });
+
+        document.querySelectorAll(".delete-file-btn").forEach(btn => {
+            btn.addEventListener("click", () => handleDeleteFile(btn.dataset.id, btn.dataset.filename));
+        });
+    }
+
+    function updateUserSelectDropdown(users) {
+        if (!assignUserSelect) return;
+        if (users.length === 0) {
+            assignUserSelect.innerHTML = `<option value="">No users available</option>`;
+            return;
+        }
+        assignUserSelect.innerHTML = users.map(u => `
+            <option value="${u.id}">@${escapeHtml(u.username)} (${escapeHtml(u.email)})</option>
+        `).join("");
+    }
+
+    // 3. Search Filters
     if (adminUserSearch) {
         adminUserSearch.addEventListener("input", (e) => {
             const query = e.target.value.toLowerCase().trim();
@@ -142,14 +274,26 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    if (refreshAdminBtn) {
-        refreshAdminBtn.addEventListener("click", () => {
-            loadAdminData();
-            window.showToast("Refreshed user metrics", "info");
+    if (adminFileSearch) {
+        adminFileSearch.addEventListener("input", (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            const filtered = allFiles.filter(f => 
+                f.filename.toLowerCase().includes(query) || 
+                (f.owner_username && f.owner_username.toLowerCase().includes(query)) ||
+                (f.category && f.category.toLowerCase().includes(query))
+            );
+            renderFiles(filtered);
         });
     }
 
-    // 3. Reset Password Modal Logic
+    if (refreshAdminBtn) {
+        refreshAdminBtn.addEventListener("click", () => {
+            loadAdminData();
+            window.showToast("Refreshed system metrics", "info");
+        });
+    }
+
+    // 4. Password Reset Modal Logic
     function openResetModal(userId, username) {
         targetUserIdInput.value = userId;
         resetModalSubtitle.textContent = `Set a new password for account @${username}`;
@@ -166,7 +310,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (closeResetModalBtn) closeResetModalBtn.addEventListener("click", closeResetModal);
     if (cancelResetBtn) cancelResetBtn.addEventListener("click", closeResetModal);
 
-    // Auto-Generate Random Password
     if (generateRandomPassBtn) {
         generateRandomPassBtn.addEventListener("click", () => {
             const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%";
@@ -180,7 +323,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Copy to clipboard
     if (copyPassBtn) {
         copyPassBtn.addEventListener("click", () => {
             const passToCopy = displayCopiedPass.textContent || newPasswordInput.value;
@@ -191,7 +333,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Submit Password Reset Form
     if (resetForm) {
         resetForm.addEventListener("submit", async (e) => {
             e.preventDefault();
@@ -214,15 +355,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (res.ok && data.success) {
                     displayCopiedPass.textContent = newPassword;
                     generatedPassNotice.classList.remove("hidden");
-                    window.showToast(`Password for '${data.username}' updated successfully!`, "success");
-                    
-                    // Copy to clipboard automatically for easy sharing
                     navigator.clipboard.writeText(newPassword);
-                    window.showToast("New password copied to clipboard to provide to user!", "info");
-
-                    setTimeout(() => {
-                        closeResetModal();
-                    }, 2500);
+                    window.showToast(`Password for '${data.username}' updated & copied!`, "success");
+                    setTimeout(() => closeResetModal(), 2500);
                 } else {
                     window.showToast(data.error || "Password reset failed", "error");
                 }
@@ -232,9 +367,101 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Delete User
+    // 5. Assign Single File Modal
+    function openAssignModal(fileId, filename) {
+        assignTargetFileId.value = fileId;
+        assignFileSubtitle.textContent = `Assign '${filename}' to user account`;
+        assignModal.classList.remove("hidden");
+    }
+
+    function closeAssignModal() {
+        assignModal.classList.add("hidden");
+    }
+
+    if (closeAssignModalBtn) closeAssignModalBtn.addEventListener("click", closeAssignModal);
+    if (cancelAssignBtn) cancelAssignBtn.addEventListener("click", closeAssignModal);
+
+    if (assignForm) {
+        assignForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const fileId = assignTargetFileId.value;
+            const targetUserId = parseInt(assignUserSelect.value, 10);
+
+            if (!targetUserId) {
+                window.showToast("Please select a target user", "error");
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/admin/files/${fileId}/assign`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ user_id: targetUserId })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    window.showToast(data.message, "success");
+                    closeAssignModal();
+                    loadAdminData();
+                } else {
+                    window.showToast(data.error || "Failed to assign file", "error");
+                }
+            } catch (err) {
+                window.showToast("Network error while assigning file", "error");
+            }
+        });
+    }
+
+    // 6. Claim All Unassigned Files
+    if (claimAllFilesBtn) {
+        claimAllFilesBtn.addEventListener("click", async () => {
+            if (allUsers.length === 0) {
+                window.showToast("No registered users found to assign files to", "error");
+                return;
+            }
+
+            const unassignedCount = allFiles.filter(f => f.is_unassigned).length;
+            if (unassignedCount === 0) {
+                window.showToast("All files are already assigned to users!", "info");
+                return;
+            }
+
+            const userOptions = allUsers.map((u, i) => `${i + 1}. ${u.username} (ID: ${u.id})`).join("\n");
+            const chosen = prompt(`Found ${unassignedCount} unassigned legacy files.\n\nChoose target user by entering number (1 to ${allUsers.length}):\n${userOptions}`);
+            
+            if (!chosen) return;
+            const index = parseInt(chosen.trim(), 10) - 1;
+            if (isNaN(index) || index < 0 || index >= allUsers.length) {
+                window.showToast("Invalid user selection", "error");
+                return;
+            }
+
+            const targetUser = allUsers[index];
+
+            try {
+                const res = await fetch("/api/admin/files/claim-all", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ user_id: targetUser.id })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    window.showToast(data.message, "success");
+                    loadAdminData();
+                } else {
+                    window.showToast(data.error || "Failed to assign legacy files", "error");
+                }
+            } catch (err) {
+                window.showToast("Network error while assigning legacy files", "error");
+            }
+        });
+    }
+
+    // 7. Delete User & Delete File
     async function handleDeleteUser(userId, username) {
-        if (!confirm(`Are you sure you want to delete user '${username}'?\nAll their uploaded vault files will be deleted permanently.`)) {
+        if (!confirm(`Are you sure you want to delete user '${username}'?\nAll their uploaded files will be permanently deleted.`)) {
             return;
         }
 
@@ -249,6 +476,25 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         } catch (err) {
             window.showToast("Network error while deleting user", "error");
+        }
+    }
+
+    async function handleDeleteFile(fileId, filename) {
+        if (!confirm(`Are you sure you want to permanently delete '${filename}'?`)) {
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/files/${fileId}`, { method: "DELETE" });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                window.showToast(data.message, "success");
+                loadAdminData();
+            } else {
+                window.showToast(data.error || "Failed to delete file", "error");
+            }
+        } catch (err) {
+            window.showToast("Network error while deleting file", "error");
         }
     }
 
