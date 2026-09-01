@@ -1,15 +1,18 @@
 import os
 import re
+import json
+import base64
 import urllib.parse
+import shutil
+import requests
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, abort, g
+from config import Config
 from app import db
 from app.utils.db_models import FileItem, SystemNotice
 from app.utils.auth_guard import require_login
 from app.utils.drive_streamer import extract_drive_id, create_stealth_stream_response, USER_AGENT, is_drive_folder_url, extract_drive_folder_id
 from app.utils.gas_bridge import upload_file_to_gas, upload_file_from_disk_to_gas, delete_file_from_gas, get_storage_stats_from_gas, is_gas_configured, get_folder_files_from_gas
-import requests
-import shutil
 
 file_bp = Blueprint("file_bp", __name__)
 
@@ -113,9 +116,11 @@ def upload_file():
 @require_login
 def upload_chunk():
     """
-    Receives individual 5MB/10MB file chunks from client.
-    Reassembles full file on last chunk and triggers safe multi-part Google Drive upload.
-    Prevents Railway 502 proxy timeouts and browser memory freeze for files up to 2GB.
+    Receives individual 10MB file chunks from client and directly streams each chunk
+    to Google Apps Script in real-time (~8-12s per chunk).
+    
+    Prevents Railway 502/499/504 gateway timeouts, Gunicorn thread freezes,
+    and memory spikes for files of ANY size (e.g. 245MB, 500MB, 2GB).
     """
     if "chunk" not in request.files:
         return jsonify({"success": False, "error": "Missing chunk in form-data"}), 400
@@ -125,6 +130,7 @@ def upload_chunk():
     try:
         chunk_index = int(request.form.get("chunk_index", 0))
         total_chunks = int(request.form.get("total_chunks", 1))
+        total_size = int(request.form.get("total_size", 0))
     except (ValueError, TypeError):
         return jsonify({"success": False, "error": "Invalid chunk numerical parameters"}), 400
 
@@ -134,60 +140,121 @@ def upload_chunk():
     if not upload_id:
         return jsonify({"success": False, "error": "Missing upload_id"}), 400
 
+    chunk_bytes = chunk_file.read()
+    chunk_size = len(chunk_bytes)
+    
     temp_dir = os.path.join(os.getcwd(), "temp_uploads", upload_id)
     os.makedirs(temp_dir, exist_ok=True)
+    parts_meta_file = os.path.join(temp_dir, "parts.json")
 
-    chunk_path = os.path.join(temp_dir, f"chunk_{chunk_index:06d}")
-    chunk_file.save(chunk_path)
-
-    # If more chunks are pending, acknowledge receipt
-    if chunk_index < total_chunks - 1:
-        return jsonify({
-            "success": True,
-            "status": "chunk_received",
-            "chunk_index": chunk_index,
-            "total_chunks": total_chunks
-        }), 200
-
-    # Final chunk received -> Reassemble file on disk with zero memory overhead
     try:
-        assembled_file = os.path.join(temp_dir, "assembled.bin")
-        with open(assembled_file, "wb") as out_f:
-            for i in range(total_chunks):
-                part_file = os.path.join(temp_dir, f"chunk_{i:06d}")
-                if not os.path.exists(part_file):
-                    return jsonify({"success": False, "error": f"Missing chunk {i} during assembly"}), 400
-                with open(part_file, "rb") as in_f:
-                    while True:
-                        buf = in_f.read(1024 * 1024)
-                        if not buf:
-                            break
-                        out_f.write(buf)
-                try:
-                    os.remove(part_file)
-                except Exception:
-                    pass
-
-        assembled_size = os.path.getsize(assembled_file)
-
-        # Perform Upload (GAS or Local) using disk streaming (RAM remains under 30MB)
         if is_gas_configured():
-            gas_result = upload_file_from_disk_to_gas(filename, assembled_file, mime_type)
-            # Cleanup temp assembled file
-            if os.path.exists(assembled_file):
+            # Real-Time GAS Stream Pipeline: Upload this chunk directly to Google Apps Script
+            if total_chunks == 1:
+                # Single chunk file
+                base64_data = base64.b64encode(chunk_bytes).decode("utf-8")
+                payload = {
+                    "action": "upload",
+                    "filename": filename,
+                    "mime_type": mime_type,
+                    "data": base64_data
+                }
+                resp = requests.post(
+                    Config.GAS_WEBHOOK_URL,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                    allow_redirects=True,
+                    timeout=180
+                )
+                if resp.status_code != 200:
+                    return jsonify({"success": False, "error": f"GAS upload HTTP {resp.status_code}"}), 500
+                res_data = resp.json()
+                if not res_data.get("success"):
+                    return jsonify({"success": False, "error": res_data.get("error", "GAS upload failed")}), 500
+                
+                drive_file_id = res_data.get("file_id")
+                drive_url = res_data.get("download_url") or res_data.get("view_url") or ""
+                source_type = "gas_upload"
+                final_file_size = total_size or chunk_size
+            else:
+                # Multi-part chunk: upload this specific part to GAS immediately
+                part_name = f"{filename}.part_{chunk_index + 1}_of_{total_chunks}"
+                base64_data = base64.b64encode(chunk_bytes).decode("utf-8")
+                payload = {
+                    "action": "upload",
+                    "filename": part_name,
+                    "mime_type": "application/octet-stream",
+                    "data": base64_data
+                }
+                resp = requests.post(
+                    Config.GAS_WEBHOOK_URL,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                    allow_redirects=True,
+                    timeout=180
+                )
+                if resp.status_code != 200:
+                    return jsonify({"success": False, "error": f"GAS part {chunk_index + 1} HTTP {resp.status_code}"}), 500
+                res_data = resp.json()
+                if not res_data.get("success"):
+                    return jsonify({"success": False, "error": f"GAS part {chunk_index + 1} error: {res_data.get('error')}"}), 500
+
+                # Save part record to parts.json
+                parts_list = []
+                if os.path.exists(parts_meta_file):
+                    try:
+                        with open(parts_meta_file, "r") as pf:
+                            parts_list = json.load(pf)
+                    except Exception:
+                        parts_list = []
+
+                parts_list.append({
+                    "part": chunk_index + 1,
+                    "file_id": res_data.get("file_id"),
+                    "size": chunk_size,
+                    "download_url": res_data.get("download_url", "")
+                })
+
+                with open(parts_meta_file, "w") as pf:
+                    json.dump(parts_list, pf)
+
+                # If more chunks are pending, return 200 immediately (Takes ~10s per chunk)
+                if chunk_index < total_chunks - 1:
+                    return jsonify({
+                        "success": True,
+                        "status": "chunk_uploaded",
+                        "chunk_index": chunk_index,
+                        "total_chunks": total_chunks
+                    }), 200
+
+                # Final chunk reached!
+                parts_list.sort(key=lambda x: x["part"])
+                drive_file_id = f"MULTIPART:{json.dumps(parts_list)}"
+                drive_url = ""
+                source_type = "gas_upload"
+                final_file_size = total_size or sum(p.get("size", 0) for p in parts_list)
+
+                # Clean temp directory
                 try:
-                    os.remove(assembled_file)
+                    os.remove(parts_meta_file)
                     os.rmdir(temp_dir)
                 except Exception:
                     pass
-
-            if not gas_result.get("success"):
-                return jsonify({"success": False, "error": gas_result.get("error", "Google Drive upload failed")}), 500
-
-            drive_file_id = gas_result.get("file_id")
-            drive_url = gas_result.get("download_url") or gas_result.get("view_url") or ""
-            source_type = "gas_upload"
         else:
+            # Local Storage Mode: Append chunk to assembled.bin
+            assembled_file = os.path.join(temp_dir, "assembled.bin")
+            with open(assembled_file, "ab") as af:
+                af.write(chunk_bytes)
+
+            if chunk_index < total_chunks - 1:
+                return jsonify({
+                    "success": True,
+                    "status": "chunk_received",
+                    "chunk_index": chunk_index,
+                    "total_chunks": total_chunks
+                }), 200
+
+            # Final chunk: move to uploads/
             upload_dir = os.path.join(os.getcwd(), "uploads")
             os.makedirs(upload_dir, exist_ok=True)
             safe_name = f"{int(datetime.now(timezone.utc).timestamp())}_{filename}"
@@ -201,13 +268,14 @@ def upload_chunk():
             drive_file_id = None
             drive_url = local_path
             source_type = "local_upload"
+            final_file_size = os.path.getsize(local_path)
 
+        # Create Database FileItem
         category = FileItem.detect_category(filename, mime_type)
-
         new_item = FileItem(
             user_id=g.current_user.id,
             filename=filename,
-            file_size=assembled_size,
+            file_size=final_file_size,
             mime_type=mime_type,
             category=category,
             drive_file_id=drive_file_id,
@@ -222,8 +290,9 @@ def upload_chunk():
             "message": "File uploaded and processed successfully!",
             "file": new_item.to_dict()
         }), 201
+
     except Exception as e:
-        return jsonify({"success": False, "error": f"Failed during chunk reassembly: {str(e)}"}), 500
+        return jsonify({"success": False, "error": f"Upload chunk error: {str(e)}"}), 500
 
 @file_bp.route("/import-link", methods=["POST"])
 @require_login

@@ -444,7 +444,7 @@ document.addEventListener("DOMContentLoaded", () => {
         uploadProgressBar.style.width = "0%";
         uploadStatusText.textContent = "Preparing chunked stream...";
 
-        const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB per chunk (prevents timeouts & memory spikes)
+        const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB per chunk (fastest real-time streaming)
         const totalSize = file.size;
         const totalChunks = Math.max(1, Math.ceil(totalSize / CHUNK_SIZE));
         const uploadId = "up_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
@@ -468,20 +468,42 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const isLastChunk = (chunkIndex === totalChunks - 1);
             if (isLastChunk) {
-                uploadStatusText.textContent = "Finalizing & streaming to Google Drive...";
+                uploadStatusText.textContent = `Streaming final part (${chunkIndex + 1}/${totalChunks}) to Google Drive...`;
             } else {
-                uploadStatusText.textContent = `Uploading chunk ${chunkIndex + 1} of ${totalChunks}...`;
+                uploadStatusText.textContent = `Streaming chunk ${chunkIndex + 1} of ${totalChunks} to Google Drive...`;
             }
 
-            const response = await fetch("/api/files/upload-chunk", {
-                method: "POST",
-                body: formData
-            });
+            // Chunk Upload with Automatic Retry (Up to 3 attempts per chunk)
+            let attempts = 0;
+            let success = false;
+            let lastError = null;
 
-            const data = await response.json();
+            while (attempts < 3 && !success) {
+                attempts++;
+                try {
+                    const response = await fetch("/api/files/upload-chunk", {
+                        method: "POST",
+                        body: formData
+                    });
 
-            if (!response.ok || !data.success) {
-                throw new Error(data.error || `Upload failed on chunk ${chunkIndex + 1}`);
+                    const data = await response.json();
+
+                    if (response.ok && data.success) {
+                        success = true;
+                    } else {
+                        throw new Error(data.error || `Server HTTP ${response.status}`);
+                    }
+                } catch (err) {
+                    lastError = err;
+                    if (attempts < 3) {
+                        uploadStatusText.textContent = `Retrying chunk ${chunkIndex + 1} (Attempt ${attempts + 1}/3)...`;
+                        await new Promise(r => setTimeout(r, 2000));
+                    }
+                }
+            }
+
+            if (!success) {
+                throw new Error(`Failed on chunk ${chunkIndex + 1}/${totalChunks}: ${lastError ? lastError.message : 'Unknown error'}`);
             }
 
             uploadedBytes += (end - start);
@@ -496,6 +518,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 uploadSpeed.textContent = `${mbPerSec} MB/s`;
             }
         }
+
+        uploadStatusText.textContent = "✅ Saved to Vault!";
     }
 
     // 4. IMPORT GOOGLE DRIVE LINK FORM
