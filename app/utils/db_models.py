@@ -152,3 +152,40 @@ class SystemNotice(db.Model):
             "is_active": self.is_active,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
+
+
+class ChunkUploadPart(db.Model):
+    """
+    Tracks individual uploaded chunk parts for large multi-part file uploads.
+    Stored in PostgreSQL (NOT ephemeral disk) so it survives Railway restarts.
+    
+    Each row = one successfully uploaded chunk part in Google Drive.
+    On final chunk, all parts for an upload_id are assembled into MULTIPART: record.
+    Rows are deleted after the upload completes or is abandoned (>24h old).
+    """
+    __tablename__ = "chunk_upload_parts"
+
+    id = db.Column(db.Integer, primary_key=True)
+    upload_id = db.Column(db.String(64), nullable=False, index=True)   # unique per upload session
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    part_number = db.Column(db.Integer, nullable=False)                 # 1-based index
+    total_parts = db.Column(db.Integer, nullable=False)
+    drive_file_id = db.Column(db.String(255), nullable=False)           # Google Drive file_id of this part
+    part_size = db.Column(db.BigInteger, default=0)                    # bytes
+    filename = db.Column(db.String(255), nullable=False)               # original filename
+    mime_type = db.Column(db.String(128), default="application/octet-stream")
+    total_size = db.Column(db.BigInteger, default=0)                   # full file size in bytes
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    # Unique constraint: only one row per (upload_id, part_number)
+    __table_args__ = (
+        db.UniqueConstraint("upload_id", "part_number", name="uq_upload_part"),
+    )
+
+    def to_dict(self):
+        return {
+            "upload_id": self.upload_id,
+            "part_number": self.part_number,
+            "drive_file_id": self.drive_file_id,
+            "part_size": self.part_size,
+        }

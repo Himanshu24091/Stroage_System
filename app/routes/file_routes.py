@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, abort, g
 from config import Config
 from app import db
-from app.utils.db_models import FileItem, SystemNotice
+from app.utils.db_models import FileItem, SystemNotice, ChunkUploadPart
 from app.utils.auth_guard import require_login
 from app.utils.drive_streamer import extract_drive_id, create_stealth_stream_response, USER_AGENT, is_drive_folder_url, extract_drive_folder_id
 from app.utils.gas_bridge import upload_file_to_gas, upload_file_from_disk_to_gas, delete_file_from_gas, get_storage_stats_from_gas, is_gas_configured, get_folder_files_from_gas
@@ -138,14 +138,14 @@ def upload_file():
 @require_login
 def upload_chunk():
     """
-    Receives individual 4MB file chunks from client and directly streams each chunk
-    to Google Apps Script in real-time (~8-12s per chunk).
+    Receives individual 4MB file chunks and streams each to Google Apps Script.
 
-    Thread-safe: uses per-upload_id locks so concurrent uploads from different
-    users never corrupt each other's parts.json metadata.
-
-    Prevents Railway 502/499/504 gateway timeouts, Gunicorn thread freezes,
-    and memory spikes for files of ANY size (e.g. 245MB, 500MB, 2GB).
+    KEY IMPROVEMENTS:
+    - Parts tracked in PostgreSQL (NOT ephemeral disk) → survives Railway restarts
+    - Idempotent upsert: retrying a failed chunk reuses existing Drive file_id
+      so NO duplicate files are created in Drive on retry
+    - Per-upload threading lock for concurrent upload safety
+    - Detailed error logging printed to Railway logs
     """
     if "chunk" not in request.files:
         return jsonify({"success": False, "error": "Missing chunk in form-data"}), 400
@@ -161,6 +161,7 @@ def upload_chunk():
 
     filename = request.form.get("filename", "unnamed_file").strip()
     mime_type = request.form.get("mime_type", "application/octet-stream").strip()
+    part_number = chunk_index + 1  # 1-based
 
     if not upload_id:
         return jsonify({"success": False, "error": "Missing upload_id"}), 400
@@ -169,55 +170,41 @@ def upload_chunk():
     chunk_size = len(chunk_bytes)
 
     # Validate chunk size: 4MB raw → ~5.3MB base64 payload to GAS
-    # Reject if someone sends >8MB to prevent GAS execution limit breach
     MAX_CHUNK_BYTES = 8 * 1024 * 1024  # 8MB hard cap
     if chunk_size > MAX_CHUNK_BYTES:
         return jsonify({
             "success": False,
-            "error": f"Chunk too large: {chunk_size // (1024*1024)}MB. Max allowed: 8MB per chunk."
+            "error": f"Chunk too large: {chunk_size // (1024*1024)}MB. Max 8MB."
         }), 413
-
-    temp_dir = os.path.join(os.getcwd(), "temp_uploads", upload_id)
-    os.makedirs(temp_dir, exist_ok=True)
-    parts_meta_file = os.path.join(temp_dir, "parts.json")
 
     try:
         if is_gas_configured():
-            # Real-Time GAS Stream Pipeline: Upload this chunk directly to Google Apps Script
-            if total_chunks == 1:
-                # Single chunk file
-                base64_data = base64.b64encode(chunk_bytes).decode("utf-8")
-                payload = {
-                    "action": "upload",
-                    "filename": filename,
-                    "mime_type": mime_type,
-                    "data": base64_data
-                }
-                resp = requests.post(
-                    Config.GAS_WEBHOOK_URL,
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                    allow_redirects=True,
-                    timeout=180
-                )
-                if resp.status_code != 200:
-                    return jsonify({"success": False, "error": f"GAS upload HTTP {resp.status_code}"}), 500
-                res_data = resp.json()
-                if not res_data.get("success"):
-                    return jsonify({"success": False, "error": res_data.get("error", "GAS upload failed")}), 500
-                
-                drive_file_id = res_data.get("file_id")
-                drive_url = res_data.get("download_url") or res_data.get("view_url") or ""
-                source_type = "gas_upload"
-                final_file_size = total_size or chunk_size
+            # ---------------------------------------------------------------
+            # IDEMPOTENT CHECK: Did this part already upload successfully?
+            # (Prevents duplicate Drive files when client retries a chunk)
+            # ---------------------------------------------------------------
+            existing_part = ChunkUploadPart.query.filter_by(
+                upload_id=upload_id,
+                part_number=part_number
+            ).first()
+
+            if existing_part:
+                # Part already in DB = already uploaded to Drive. Reuse it.
+                print(f"[UPLOAD-CHUNK] Idempotent: reusing part {part_number} drive_id={existing_part.drive_file_id}")
+                part_drive_id = existing_part.drive_file_id
             else:
-                # Multi-part chunk: upload this specific part to GAS immediately
-                part_name = f"{filename}.part_{chunk_index + 1}_of_{total_chunks}"
+                # Upload this chunk to GAS / Google Drive
+                part_name = (
+                    filename if total_chunks == 1
+                    else f"{filename}.part_{part_number}_of_{total_chunks}"
+                )
+                upload_mime = mime_type if total_chunks == 1 else "application/octet-stream"
+
                 base64_data = base64.b64encode(chunk_bytes).decode("utf-8")
                 payload = {
                     "action": "upload",
                     "filename": part_name,
-                    "mime_type": "application/octet-stream",
+                    "mime_type": upload_mime,
                     "data": base64_data
                 }
                 resp = requests.post(
@@ -225,70 +212,90 @@ def upload_chunk():
                     json=payload,
                     headers={"Content-Type": "application/json"},
                     allow_redirects=True,
-                    timeout=180
+                    timeout=240  # 4 min max per chunk
                 )
+
                 if resp.status_code != 200:
-                    return jsonify({"success": False, "error": f"GAS part {chunk_index + 1} HTTP {resp.status_code}"}), 500
+                    return jsonify({"success": False, "error": f"GAS HTTP {resp.status_code} on part {part_number}"}), 502
+
                 res_data = resp.json()
                 if not res_data.get("success"):
-                    return jsonify({"success": False, "error": f"GAS part {chunk_index + 1} error: {res_data.get('error')}"}), 500
+                    err_msg = res_data.get("error", "GAS upload failed")
+                    print(f"[UPLOAD-CHUNK] GAS error part {part_number}: {err_msg}")
+                    return jsonify({"success": False, "error": f"GAS part {part_number}: {err_msg}"}), 500
 
-                # Save part record to parts.json — use per-upload lock for thread safety
+                part_drive_id = res_data.get("file_id")
+
+                # Save part to PostgreSQL (survives Railway restarts!)
                 upload_lock = _get_upload_lock(upload_id)
                 with upload_lock:
-                    parts_list = []
-                    if os.path.exists(parts_meta_file):
-                        try:
-                            with open(parts_meta_file, "r") as pf:
-                                parts_list = json.load(pf)
-                        except Exception:
-                            parts_list = []
+                    new_part = ChunkUploadPart(
+                        upload_id=upload_id,
+                        user_id=g.current_user.id,
+                        part_number=part_number,
+                        total_parts=total_chunks,
+                        drive_file_id=part_drive_id,
+                        part_size=chunk_size,
+                        filename=filename,
+                        mime_type=mime_type,
+                        total_size=total_size
+                    )
+                    db.session.add(new_part)
+                    db.session.commit()
 
-                    parts_list.append({
-                        "part": chunk_index + 1,
-                        "file_id": res_data.get("file_id"),
-                        "size": chunk_size,
-                        "download_url": res_data.get("download_url", "")
-                    })
+            # Not the last chunk — return immediately
+            if chunk_index < total_chunks - 1:
+                return jsonify({
+                    "success": True,
+                    "status": "chunk_uploaded",
+                    "chunk_index": chunk_index,
+                    "total_chunks": total_chunks
+                }), 200
 
-                    with open(parts_meta_file, "w") as pf:
-                        json.dump(parts_list, pf)
+            # ---------------------------------------------------------------
+            # FINAL CHUNK: Assemble all parts from DB into MULTIPART: record
+            # ---------------------------------------------------------------
+            all_parts = ChunkUploadPart.query.filter_by(
+                upload_id=upload_id
+            ).order_by(ChunkUploadPart.part_number.asc()).all()
 
-                # If more chunks are pending, return 200 immediately (Takes ~10s per chunk)
-                if chunk_index < total_chunks - 1:
-                    return jsonify({
-                        "success": True,
-                        "status": "chunk_uploaded",
-                        "chunk_index": chunk_index,
-                        "total_chunks": total_chunks
-                    }), 200
+            if len(all_parts) < total_chunks:
+                missing = total_chunks - len(all_parts)
+                print(f"[UPLOAD-CHUNK] Missing {missing} parts for upload_id={upload_id}")
+                return jsonify({
+                    "success": False,
+                    "error": f"Upload incomplete: {len(all_parts)}/{total_chunks} parts received. Missing {missing} parts."
+                }), 409
 
-                # Final chunk reached!
-                upload_lock = _get_upload_lock(upload_id)
-                with upload_lock:
-                    if os.path.exists(parts_meta_file):
-                        try:
-                            with open(parts_meta_file, "r") as pf:
-                                parts_list = json.load(pf)
-                        except Exception:
-                            parts_list = []
-                    parts_list.sort(key=lambda x: x["part"])
+            parts_list = [{
+                "part": p.part_number,
+                "file_id": p.drive_file_id,
+                "size": p.part_size,
+                "download_url": ""
+            } for p in all_parts]
 
+            if total_chunks == 1:
+                drive_file_id = parts_list[0]["file_id"]
+                drive_url = ""
+            else:
                 drive_file_id = f"MULTIPART:{json.dumps(parts_list)}"
                 drive_url = ""
-                source_type = "gas_upload"
-                final_file_size = total_size or sum(p.get("size", 0) for p in parts_list)
 
-                # Clean temp directory and release the lock from registry
-                try:
-                    os.remove(parts_meta_file)
-                    os.rmdir(temp_dir)
-                except Exception:
-                    pass
-                _release_upload_lock(upload_id)
+            source_type = "gas_upload"
+            final_file_size = total_size or sum(p.part_size for p in all_parts)
+
+            # Cleanup DB parts rows for this upload
+            ChunkUploadPart.query.filter_by(upload_id=upload_id).delete()
+            _release_upload_lock(upload_id)
+
         else:
-            # Local Storage Mode: Append chunk to assembled.bin
+            # ---------------------------------------------------------------
+            # LOCAL STORAGE MODE (no GAS configured)
+            # ---------------------------------------------------------------
+            temp_dir = os.path.join(os.getcwd(), "temp_uploads", upload_id)
+            os.makedirs(temp_dir, exist_ok=True)
             assembled_file = os.path.join(temp_dir, "assembled.bin")
+
             with open(assembled_file, "ab") as af:
                 af.write(chunk_bytes)
 
@@ -300,14 +307,13 @@ def upload_chunk():
                     "total_chunks": total_chunks
                 }), 200
 
-            # Final chunk: move to uploads/
             upload_dir = os.path.join(os.getcwd(), "uploads")
             os.makedirs(upload_dir, exist_ok=True)
             safe_name = f"{int(datetime.now(timezone.utc).timestamp())}_{filename}"
             local_path = os.path.join(upload_dir, safe_name)
             shutil.move(assembled_file, local_path)
             try:
-                os.rmdir(temp_dir)
+                shutil.rmtree(temp_dir, ignore_errors=True)
             except Exception:
                 pass
 
@@ -316,7 +322,7 @@ def upload_chunk():
             source_type = "local_upload"
             final_file_size = os.path.getsize(local_path)
 
-        # Create Database FileItem
+        # Create FileItem record in DB
         category = FileItem.detect_category(filename, mime_type)
         new_item = FileItem(
             user_id=g.current_user.id,
@@ -331,6 +337,7 @@ def upload_chunk():
         db.session.add(new_item)
         db.session.commit()
 
+        print(f"[UPLOAD-CHUNK] ✅ Completed: '{filename}' ({final_file_size} bytes) user={g.current_user.id}")
         return jsonify({
             "success": True,
             "message": "File uploaded and processed successfully!",
@@ -338,14 +345,17 @@ def upload_chunk():
         }), 201
 
     except requests.exceptions.Timeout as e:
-        return jsonify({"success": False, "error": f"GAS request timed out: {str(e)}"}), 504
+        print(f"[UPLOAD-CHUNK] TIMEOUT part {part_number}: {e}")
+        return jsonify({"success": False, "error": f"GAS timed out on part {part_number}. Try again."}), 504
     except requests.exceptions.ConnectionError as e:
-        return jsonify({"success": False, "error": f"GAS connection failed: {str(e)}"}), 502
+        print(f"[UPLOAD-CHUNK] CONNECTION ERROR part {part_number}: {e}")
+        return jsonify({"success": False, "error": f"GAS connection failed on part {part_number}"}), 502
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
-        print(f"[UPLOAD-CHUNK ERROR] upload_id={upload_id} chunk={chunk_index+1}/{total_chunks}: {str(e)}\n{tb}")
-        return jsonify({"success": False, "error": f"Upload chunk error: {str(e)}"}), 500
+        print(f"[UPLOAD-CHUNK ERROR] upload_id={upload_id} part={part_number}/{total_chunks}: {str(e)}\n{tb}")
+        db.session.rollback()
+        return jsonify({"success": False, "error": f"Server error on part {part_number}: {str(e)}"}), 500
 
 @file_bp.route("/import-link", methods=["POST"])
 @require_login
