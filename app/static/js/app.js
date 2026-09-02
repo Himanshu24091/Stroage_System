@@ -467,8 +467,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (fileInput) fileInput.value = "";
         isUploading = false;
         cancelRequested = false;
-        loadFiles();
-        loadStorageStats();
+        await loadFiles();       // refresh file list
+        updateStats();           // refresh storage stats (was loadStorageStats - undefined!)
     }
 
     // -------------------------------------------------------------------------

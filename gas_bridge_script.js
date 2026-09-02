@@ -14,8 +14,12 @@
  * 8. Set "Who has access": "Anyone" (Required so your Render/Railway backend can reach it).
  * 9. Click "Deploy", authorize permissions when prompted.
  * 10. Copy the "Web app URL" (looks like https://script.google.com/macros/s/.../exec).
- * 11. Paste this URL into your .env file or Render Environment Variables as:
+ * 11. Paste this URL into your .env file or Railway Environment Variables as:
  *     GAS_WEBHOOK_URL=https://script.google.com/macros/s/.../exec
+ * ==============================================================================
+ * 
+ * IMPORTANT: After editing this file, you MUST redeploy as a NEW DEPLOYMENT version:
+ *   Deploy → Manage Deployments → Edit (pencil) → Version: "New Version" → Deploy
  * ==============================================================================
  */
 
@@ -46,47 +50,72 @@ function getOrCreateVaultFolder() {
 function doPost(e) {
   try {
     if (!e || !e.postData || !e.postData.contents) {
-      return jsonResponse({ success: false, error: "No post data received" }, 400);
+      return jsonResponse({ success: false, error: "No post data received" });
     }
 
+    // GAS doPost content size check: postData.contents is a string
+    // Base64 of 4MB = ~5.3MB string. GAS can handle up to ~50MB string safely.
     const payload = JSON.parse(e.postData.contents);
     const action = payload.action;
 
-    // Action: Upload Base64 chunk or full file
+    // =========================================================================
+    // Action: Upload Base64 chunk or full file to Google Drive
+    // =========================================================================
     if (action === "upload") {
       const fileName = payload.filename || "unnamed_file";
       const mimeType = payload.mime_type || "application/octet-stream";
       const base64Data = payload.data;
 
       if (!base64Data) {
-        return jsonResponse({ success: false, error: "Missing file data" }, 400);
+        return jsonResponse({ success: false, error: "Missing file data" });
       }
 
-      const decodedBytes = Utilities.base64Decode(base64Data);
-      const blob = Utilities.newBlob(decodedBytes, mimeType, fileName);
-      
-      const folder = getOrCreateVaultFolder();
-      const file = folder.createFile(blob);
-      
-      // Make file viewable by link for stealth streaming proxy
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      // Safety: Check base64 string length (4MB raw -> ~5.5MB base64 string)
+      // GAS safe limit is ~30MB decoded. Reject if clearly too large.
+      const base64Len = base64Data.length;
+      const estimatedBytes = Math.floor(base64Len * 0.75);
+      if (estimatedBytes > 20 * 1024 * 1024) {
+        return jsonResponse({
+          success: false,
+          error: "Chunk too large for GAS processing (" + 
+                 Math.round(estimatedBytes / (1024*1024)) + "MB). Max: 20MB per chunk."
+        });
+      }
 
-      return jsonResponse({
-        success: true,
-        file_id: file.getId(),
-        filename: file.getName(),
-        size: file.getSize(),
-        mime_type: file.getMimeType(),
-        download_url: file.getDownloadUrl(),
-        view_url: file.getUrl()
-      });
+      try {
+        const decodedBytes = Utilities.base64Decode(base64Data);
+        const blob = Utilities.newBlob(decodedBytes, mimeType, fileName);
+        
+        const folder = getOrCreateVaultFolder();
+        const file = folder.createFile(blob);
+        
+        // Make file viewable by link for stealth streaming proxy
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+        return jsonResponse({
+          success: true,
+          file_id: file.getId(),
+          filename: file.getName(),
+          size: file.getSize(),
+          mime_type: file.getMimeType(),
+          download_url: file.getDownloadUrl(),
+          view_url: file.getUrl()
+        });
+      } catch (uploadErr) {
+        return jsonResponse({
+          success: false,
+          error: "Drive upload failed: " + uploadErr.toString()
+        });
+      }
     }
 
+    // =========================================================================
     // Action: Delete file from Google Drive
+    // =========================================================================
     if (action === "delete") {
       const fileId = payload.file_id;
       if (!fileId) {
-        return jsonResponse({ success: false, error: "Missing file_id" }, 400);
+        return jsonResponse({ success: false, error: "Missing file_id" });
       }
 
       try {
@@ -98,11 +127,13 @@ function doPost(e) {
       }
     }
 
+    // =========================================================================
     // Action: Read all files inside a Google Drive Folder
+    // =========================================================================
     if (action === "get_folder_files") {
       const folderId = payload.folder_id;
       if (!folderId) {
-        return jsonResponse({ success: false, error: "Missing folder_id" }, 400);
+        return jsonResponse({ success: false, error: "Missing folder_id" });
       }
 
       try {
@@ -131,27 +162,40 @@ function doPost(e) {
           files: fileList
         });
       } catch (err) {
-        return jsonResponse({ success: false, error: "Could not read folder: " + err.message }, 500);
+        return jsonResponse({ success: false, error: "Could not read folder: " + err.message });
       }
     }
 
+    // =========================================================================
     // Action: Check Storage Info
+    // =========================================================================
     if (action === "storage_info") {
-      const storageUsed = DriveApp.getStorageUsed();
-      const storageLimit = DriveApp.getStorageLimit();
-      return jsonResponse({
-        success: true,
-        storage_used: storageUsed,
-        storage_limit: storageLimit,
-        used_gb: (storageUsed / (1024 * 1024 * 1024)).toFixed(2),
-        limit_gb: (storageLimit / (1024 * 1024 * 1024)).toFixed(2)
-      });
+      try {
+        const storageUsed = DriveApp.getStorageUsed();
+        const storageLimit = DriveApp.getStorageLimit();
+        return jsonResponse({
+          success: true,
+          storage_used: storageUsed,
+          storage_limit: storageLimit,
+          used_gb: (storageUsed / (1024 * 1024 * 1024)).toFixed(2),
+          limit_gb: (storageLimit / (1024 * 1024 * 1024)).toFixed(2)
+        });
+      } catch (err) {
+        return jsonResponse({ success: false, error: "Storage info error: " + err.message });
+      }
     }
 
-    return jsonResponse({ success: false, error: "Unknown action: " + action }, 400);
+    // =========================================================================
+    // Action: Health check ping
+    // =========================================================================
+    if (action === "ping") {
+      return jsonResponse({ success: true, status: "ok", timestamp: new Date().toISOString() });
+    }
+
+    return jsonResponse({ success: false, error: "Unknown action: " + action });
 
   } catch (error) {
-    return jsonResponse({ success: false, error: error.toString() }, 500);
+    return jsonResponse({ success: false, error: "GAS internal error: " + error.toString() });
   }
 }
 
@@ -164,7 +208,7 @@ function doGet(e) {
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
-function jsonResponse(data, status = 200) {
+function jsonResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
 }

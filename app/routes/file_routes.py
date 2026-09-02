@@ -167,7 +167,16 @@ def upload_chunk():
 
     chunk_bytes = chunk_file.read()
     chunk_size = len(chunk_bytes)
-    
+
+    # Validate chunk size: 4MB raw → ~5.3MB base64 payload to GAS
+    # Reject if someone sends >8MB to prevent GAS execution limit breach
+    MAX_CHUNK_BYTES = 8 * 1024 * 1024  # 8MB hard cap
+    if chunk_size > MAX_CHUNK_BYTES:
+        return jsonify({
+            "success": False,
+            "error": f"Chunk too large: {chunk_size // (1024*1024)}MB. Max allowed: 8MB per chunk."
+        }), 413
+
     temp_dir = os.path.join(os.getcwd(), "temp_uploads", upload_id)
     os.makedirs(temp_dir, exist_ok=True)
     parts_meta_file = os.path.join(temp_dir, "parts.json")
@@ -328,7 +337,14 @@ def upload_chunk():
             "file": new_item.to_dict()
         }), 201
 
+    except requests.exceptions.Timeout as e:
+        return jsonify({"success": False, "error": f"GAS request timed out: {str(e)}"}), 504
+    except requests.exceptions.ConnectionError as e:
+        return jsonify({"success": False, "error": f"GAS connection failed: {str(e)}"}), 502
     except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[UPLOAD-CHUNK ERROR] upload_id={upload_id} chunk={chunk_index+1}/{total_chunks}: {str(e)}\n{tb}")
         return jsonify({"success": False, "error": f"Upload chunk error: {str(e)}"}), 500
 
 @file_bp.route("/import-link", methods=["POST"])
