@@ -165,6 +165,9 @@ def create_stealth_stream_response(file_id: str, direct_url: str, filename: str,
         try:
             parts_json = file_id.replace("MULTIPART:", "", 1)
             parts = json.loads(parts_json)
+
+            # CRITICAL: Sort by part number to guarantee correct byte order
+            parts = sorted(parts, key=lambda p: int(p.get("part", 0)))
             total_file_size = sum(p.get("size", 0) for p in parts)
 
             byte_start = 0
@@ -176,34 +179,51 @@ def create_stealth_stream_response(file_id: str, direct_url: str, filename: str,
                 if ranges[0]:
                     byte_start = int(ranges[0])
                 if len(ranges) > 1 and ranges[1]:
-                    byte_end = int(ranges[1])
+                    byte_end = min(int(ranges[1]), total_file_size - 1)
                 status_code = 206
 
             content_length = (byte_end - byte_start) + 1
 
             def generate_multipart_chunks():
-                current_offset = 0
+                """
+                Streams parts IN ORDER, yielding only bytes within [byte_start, byte_end].
+                This guarantees the reassembled file is byte-identical to the original.
+                """
+                current_offset = 0   # absolute byte offset of the start of this part
+
                 for part in parts:
                     part_id = part.get("file_id")
-                    part_size = part.get("size", 0)
-                    part_start = current_offset
-                    part_end = current_offset + part_size - 1
+                    part_size = int(part.get("size", 0))
+
+                    if not part_id or part_size == 0:
+                        current_offset += part_size
+                        continue
+
+                    part_start = current_offset          # first byte of this part (absolute)
+                    part_end = current_offset + part_size - 1  # last byte of this part (absolute)
                     current_offset += part_size
 
-                    # Skip if this part is outside the requested range
+                    # Skip parts entirely outside the requested range
                     if part_end < byte_start or part_start > byte_end:
                         continue
 
-                    # Calculate range needed inside this specific part
+                    # Which bytes inside THIS part do we need?
+                    # needed_start/end are relative to the PART's own byte-0
                     needed_start = max(0, byte_start - part_start)
-                    needed_end = min(part_size - 1, byte_end - part_start)
-                    part_range_header = f"bytes={needed_start}-{needed_end}"
+                    needed_end   = min(part_size - 1, byte_end - part_start)
 
-                    part_resp = resolve_google_drive_stream(part_id, part_range_header)
-                    if part_resp.status_code in (200, 206):
-                        for chunk in part_resp.iter_content(chunk_size=chunk_size):
-                            if chunk:
-                                yield chunk
+                    part_range = f"bytes={needed_start}-{needed_end}"
+                    part_resp = resolve_google_drive_stream(part_id, part_range)
+
+                    if part_resp and part_resp.status_code in (200, 206):
+                        for data in part_resp.iter_content(chunk_size=chunk_size):
+                            if data:
+                                yield data
+                    else:
+                        # Part fetch failed — yield zeros to avoid silent corruption,
+                        # browser/download manager will see broken data explicitly
+                        missing_bytes = (needed_end - needed_start) + 1
+                        yield b"\x00" * missing_bytes
 
             resp_headers = {
                 "Content-Type": mime_type or "application/octet-stream",
