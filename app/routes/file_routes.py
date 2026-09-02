@@ -2,6 +2,7 @@ import os
 import re
 import json
 import base64
+import threading
 import urllib.parse
 import shutil
 import requests
@@ -15,6 +16,27 @@ from app.utils.drive_streamer import extract_drive_id, create_stealth_stream_res
 from app.utils.gas_bridge import upload_file_to_gas, upload_file_from_disk_to_gas, delete_file_from_gas, get_storage_stats_from_gas, is_gas_configured, get_folder_files_from_gas
 
 file_bp = Blueprint("file_bp", __name__)
+
+# -----------------------------------------------------------------------
+# Per-upload-id threading locks to prevent data corruption when multiple
+# users (or retried chunks) try to write to the same parts.json at once.
+# A global dict maps upload_id -> threading.Lock().
+# The lock is released and removed once the upload finishes/fails.
+# -----------------------------------------------------------------------
+_upload_locks: dict = {}
+_upload_locks_mutex = threading.Lock()   # protects the dict itself
+
+def _get_upload_lock(upload_id: str) -> threading.Lock:
+    """Return (creating if needed) a per-upload threading.Lock."""
+    with _upload_locks_mutex:
+        if upload_id not in _upload_locks:
+            _upload_locks[upload_id] = threading.Lock()
+        return _upload_locks[upload_id]
+
+def _release_upload_lock(upload_id: str):
+    """Remove the lock for a finished upload_id from the registry."""
+    with _upload_locks_mutex:
+        _upload_locks.pop(upload_id, None)
 
 @file_bp.route("", methods=["GET"])
 @require_login
@@ -116,9 +138,12 @@ def upload_file():
 @require_login
 def upload_chunk():
     """
-    Receives individual 10MB file chunks from client and directly streams each chunk
+    Receives individual 4MB file chunks from client and directly streams each chunk
     to Google Apps Script in real-time (~8-12s per chunk).
-    
+
+    Thread-safe: uses per-upload_id locks so concurrent uploads from different
+    users never corrupt each other's parts.json metadata.
+
     Prevents Railway 502/499/504 gateway timeouts, Gunicorn thread freezes,
     and memory spikes for files of ANY size (e.g. 245MB, 500MB, 2GB).
     """
@@ -199,24 +224,26 @@ def upload_chunk():
                 if not res_data.get("success"):
                     return jsonify({"success": False, "error": f"GAS part {chunk_index + 1} error: {res_data.get('error')}"}), 500
 
-                # Save part record to parts.json
-                parts_list = []
-                if os.path.exists(parts_meta_file):
-                    try:
-                        with open(parts_meta_file, "r") as pf:
-                            parts_list = json.load(pf)
-                    except Exception:
-                        parts_list = []
+                # Save part record to parts.json — use per-upload lock for thread safety
+                upload_lock = _get_upload_lock(upload_id)
+                with upload_lock:
+                    parts_list = []
+                    if os.path.exists(parts_meta_file):
+                        try:
+                            with open(parts_meta_file, "r") as pf:
+                                parts_list = json.load(pf)
+                        except Exception:
+                            parts_list = []
 
-                parts_list.append({
-                    "part": chunk_index + 1,
-                    "file_id": res_data.get("file_id"),
-                    "size": chunk_size,
-                    "download_url": res_data.get("download_url", "")
-                })
+                    parts_list.append({
+                        "part": chunk_index + 1,
+                        "file_id": res_data.get("file_id"),
+                        "size": chunk_size,
+                        "download_url": res_data.get("download_url", "")
+                    })
 
-                with open(parts_meta_file, "w") as pf:
-                    json.dump(parts_list, pf)
+                    with open(parts_meta_file, "w") as pf:
+                        json.dump(parts_list, pf)
 
                 # If more chunks are pending, return 200 immediately (Takes ~10s per chunk)
                 if chunk_index < total_chunks - 1:
@@ -228,18 +255,28 @@ def upload_chunk():
                     }), 200
 
                 # Final chunk reached!
-                parts_list.sort(key=lambda x: x["part"])
+                upload_lock = _get_upload_lock(upload_id)
+                with upload_lock:
+                    if os.path.exists(parts_meta_file):
+                        try:
+                            with open(parts_meta_file, "r") as pf:
+                                parts_list = json.load(pf)
+                        except Exception:
+                            parts_list = []
+                    parts_list.sort(key=lambda x: x["part"])
+
                 drive_file_id = f"MULTIPART:{json.dumps(parts_list)}"
                 drive_url = ""
                 source_type = "gas_upload"
                 final_file_size = total_size or sum(p.get("size", 0) for p in parts_list)
 
-                # Clean temp directory
+                # Clean temp directory and release the lock from registry
                 try:
                     os.remove(parts_meta_file)
                     os.rmdir(temp_dir)
                 except Exception:
                     pass
+                _release_upload_lock(upload_id)
         else:
             # Local Storage Mode: Append chunk to assembled.bin
             assembled_file = os.path.join(temp_dir, "assembled.bin")

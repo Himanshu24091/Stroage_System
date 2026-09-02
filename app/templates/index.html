@@ -100,7 +100,7 @@
                             </svg>
                         </div>
                         <h3 class="dropzone-title">Drag & drop multiple files here, or <span class="browse-link">browse</span></h3>
-                        <p class="dropzone-subtitle">Batch multi-file uploads with automated 5MB chunking & stealth proxy (Up to 2GB per file)</p>
+                        <p class="dropzone-subtitle">Batch multi-file uploads with automated 4MB chunking &amp; stealth proxy (Up to 2GB per file)</p>
                     </div>
                 </div>
 
@@ -108,10 +108,16 @@
                 <div id="uploadProgressCard" class="progress-card hidden">
                     <div class="progress-header-row">
                         <span id="batchQueueStatus" class="badge-queue">Batch Queue: 1 / 1</span>
-                        <div class="progress-percent" id="uploadPercentage">0%</div>
+                        <div style="display:flex; align-items:center; gap:12px;">
+                            <div class="progress-percent" id="uploadPercentage">0%</div>
+                            <button type="button" id="cancelUploadBtn" title="Cancel Upload" style="background:rgba(244,63,94,0.15);border:1px solid rgba(244,63,94,0.4);border-radius:6px;color:#f43f5e;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all 0.2s;">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                Cancel
+                            </button>
+                        </div>
                     </div>
                     <div class="progress-info-row">
-                        <div class="progress-file-name" id="uploadFilename">sample_large_video.mp4</div>
+                        <div class="progress-file-name" id="uploadFilename">—</div>
                         <span id="uploadSpeed" class="speed-indicator">0 MB/s</span>
                     </div>
                     <div class="progress-bar-track">
@@ -119,7 +125,7 @@
                     </div>
                     <div class="progress-status-row">
                         <span id="uploadStatusText">Preparing chunked stream...</span>
-                        <span id="batchRemainingText">0 remaining</span>
+                        <span id="batchRemainingText">0 remaining in queue</span>
                     </div>
                 </div>
             </div>

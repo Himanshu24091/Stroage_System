@@ -65,6 +65,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const uploadProgressBar = document.getElementById("uploadProgressBar");
     const uploadSpeed = document.getElementById("uploadSpeed");
     const uploadStatusText = document.getElementById("uploadStatusText");
+    const cancelUploadBtn = document.getElementById("cancelUploadBtn");
 
     // Import Form Elements
     const importLinkForm = document.getElementById("importLinkForm");
@@ -355,6 +356,31 @@ document.addEventListener("DOMContentLoaded", () => {
     const batchRemainingText = document.getElementById("batchRemainingText");
     let uploadQueue = [];
     let isUploading = false;
+    let cancelRequested = false;   // global cancel flag
+    let currentXHR = null;         // reference to the active XHR so we can abort it
+
+    // Cancel button
+    if (cancelUploadBtn) {
+        cancelUploadBtn.addEventListener("click", () => {
+            if (!isUploading) return;
+            cancelRequested = true;
+            if (currentXHR) {
+                currentXHR.abort();
+                currentXHR = null;
+            }
+            uploadQueue = [];   // clear the remaining queue
+            uploadStatusText.textContent = "⛔ Upload cancelled by user.";
+            uploadPercentage.textContent = "0%";
+            uploadProgressBar.style.width = "0%";
+            uploadSpeed.textContent = "0 MB/s";
+            window.showToast("Upload cancelled.", "error");
+            setTimeout(() => {
+                uploadProgressCard.classList.add("hidden");
+                isUploading = false;
+                cancelRequested = false;
+            }, 2000);
+        });
+    }
 
     if (dropzone && fileInput) {
         dropzone.addEventListener("click", () => fileInput.click());
@@ -405,12 +431,15 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         isUploading = true;
+        cancelRequested = false;
         const totalBatch = uploadQueue.length;
         let completedCount = 0;
 
         uploadProgressCard.classList.remove("hidden");
 
         while (uploadQueue.length > 0) {
+            if (cancelRequested) break;
+
             const file = uploadQueue.shift();
             const currentFileNum = completedCount + 1;
             const remainingCount = uploadQueue.length;
@@ -422,40 +451,100 @@ document.addEventListener("DOMContentLoaded", () => {
                 await uploadSingleFileChunked(file);
                 completedCount++;
             } catch (err) {
+                if (cancelRequested) break;
                 console.error("File upload error:", err);
                 window.showToast(`Failed to upload ${file.name}: ${err.message}`, "error");
             }
         }
 
-        window.showToast(`Batch completed! ${completedCount} file(s) saved to vault.`, "success");
-        setTimeout(() => {
-            uploadProgressCard.classList.add("hidden");
-        }, 1500);
+        if (!cancelRequested) {
+            window.showToast(`Batch completed! ${completedCount} file(s) saved to vault.`, "success");
+            setTimeout(() => {
+                uploadProgressCard.classList.add("hidden");
+            }, 1500);
+        }
 
         if (fileInput) fileInput.value = "";
         isUploading = false;
+        cancelRequested = false;
         loadFiles();
         loadStorageStats();
+    }
+
+    // -------------------------------------------------------------------------
+    // XHR-based chunk upload — gives real upload progress events unlike fetch()
+    // -------------------------------------------------------------------------
+    function uploadChunkXHR(formData, onProgress) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            currentXHR = xhr;
+
+            xhr.open("POST", "/api/files/upload-chunk", true);
+
+            // Real upload progress (bytes actually sent to server)
+            xhr.upload.addEventListener("progress", (e) => {
+                if (e.lengthComputable && onProgress) {
+                    onProgress(e.loaded, e.total);
+                }
+            });
+
+            xhr.addEventListener("load", () => {
+                currentXHR = null;
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        const data = JSON.parse(xhr.responseText);
+                        if (data.success) {
+                            resolve(data);
+                        } else {
+                            reject(new Error(data.error || `Server error: ${xhr.status}`));
+                        }
+                    } catch {
+                        reject(new Error("Invalid JSON response from server"));
+                    }
+                } else {
+                    reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
+                }
+            });
+
+            xhr.addEventListener("error", () => {
+                currentXHR = null;
+                reject(new Error("Network error during chunk upload"));
+            });
+
+            xhr.addEventListener("abort", () => {
+                currentXHR = null;
+                reject(new Error("Upload aborted"));
+            });
+
+            xhr.send(formData);
+        });
     }
 
     async function uploadSingleFileChunked(file) {
         uploadFilename.textContent = file.name;
         uploadPercentage.textContent = "0%";
         uploadProgressBar.style.width = "0%";
+        uploadSpeed.textContent = "0 MB/s";
         uploadStatusText.textContent = "Preparing chunked stream...";
 
-        const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB per chunk (fastest real-time streaming)
+        // 4MB chunks — GAS base64-encodes payload so actual POST body is ~5.3MB,
+        // safely under GAS's ~50MB execution limit and well under Railway's timeout
+        const CHUNK_SIZE = 4 * 1024 * 1024;
         const totalSize = file.size;
         const totalChunks = Math.max(1, Math.ceil(totalSize / CHUNK_SIZE));
         const uploadId = "up_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
         const startTime = Date.now();
 
-        let uploadedBytes = 0;
+        let uploadedBytes = 0;   // bytes confirmed by server
+        let chunkBaseBytes = 0;  // bytes from completed chunks (for progress calc)
 
         for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+            if (cancelRequested) throw new Error("Cancelled");
+
             const start = chunkIndex * CHUNK_SIZE;
             const end = Math.min(start + CHUNK_SIZE, totalSize);
             const chunkBlob = file.slice(start, end);
+            const chunkSize = end - start;
 
             const formData = new FormData();
             formData.append("chunk", chunkBlob);
@@ -467,59 +556,62 @@ document.addEventListener("DOMContentLoaded", () => {
             formData.append("mime_type", file.type || "application/octet-stream");
 
             const isLastChunk = (chunkIndex === totalChunks - 1);
-            if (isLastChunk) {
-                uploadStatusText.textContent = `Streaming final part (${chunkIndex + 1}/${totalChunks}) to Google Drive...`;
-            } else {
-                uploadStatusText.textContent = `Streaming chunk ${chunkIndex + 1} of ${totalChunks} to Google Drive...`;
-            }
+            uploadStatusText.textContent = isLastChunk
+                ? `Finalizing upload (${chunkIndex + 1}/${totalChunks})...`
+                : `Uploading chunk ${chunkIndex + 1} of ${totalChunks}...`;
 
-            // Chunk Upload with Automatic Retry (Up to 3 attempts per chunk)
+            // Retry loop (up to 3 attempts per chunk)
             let attempts = 0;
             let success = false;
             let lastError = null;
 
-            while (attempts < 3 && !success) {
+            while (attempts < 3 && !success && !cancelRequested) {
                 attempts++;
                 try {
-                    const response = await fetch("/api/files/upload-chunk", {
-                        method: "POST",
-                        body: formData
+                    await uploadChunkXHR(formData, (loaded, total) => {
+                        // Real-time progress: committed chunks + what's in-flight right now
+                        const inFlight = (total > 0) ? (loaded / total) * chunkSize : 0;
+                        const totalUploaded = chunkBaseBytes + inFlight;
+                        const pct = Math.min(100, Math.round((totalUploaded / totalSize) * 100));
+
+                        uploadPercentage.textContent = `${pct}%`;
+                        uploadProgressBar.style.width = `${pct}%`;
+
+                        const elapsedSec = (Date.now() - startTime) / 1000;
+                        if (elapsedSec > 0.3) {
+                            const mbps = ((chunkBaseBytes + inFlight) / (1024 * 1024) / elapsedSec).toFixed(2);
+                            uploadSpeed.textContent = `${mbps} MB/s`;
+                        }
                     });
-
-                    const data = await response.json();
-
-                    if (response.ok && data.success) {
-                        success = true;
-                    } else {
-                        throw new Error(data.error || `Server HTTP ${response.status}`);
-                    }
+                    success = true;
                 } catch (err) {
                     lastError = err;
+                    if (cancelRequested) break;
                     if (attempts < 3) {
-                        uploadStatusText.textContent = `Retrying chunk ${chunkIndex + 1} (Attempt ${attempts + 1}/3)...`;
-                        await new Promise(r => setTimeout(r, 2000));
+                        uploadStatusText.textContent = `Retrying chunk ${chunkIndex + 1} (attempt ${attempts + 1}/3)...`;
+                        await new Promise(r => setTimeout(r, 2000 * attempts)); // backoff
                     }
                 }
             }
 
+            if (cancelRequested) throw new Error("Cancelled");
+
             if (!success) {
-                throw new Error(`Failed on chunk ${chunkIndex + 1}/${totalChunks}: ${lastError ? lastError.message : 'Unknown error'}`);
+                throw new Error(`Chunk ${chunkIndex + 1}/${totalChunks} failed after 3 attempts: ${lastError?.message || 'Unknown error'}`);
             }
 
-            uploadedBytes += (end - start);
-            const percent = Math.min(100, Math.round((uploadedBytes / totalSize) * 100));
-            uploadPercentage.textContent = `${percent}%`;
-            uploadProgressBar.style.width = `${percent}%`;
+            chunkBaseBytes += chunkSize;
+            uploadedBytes = chunkBaseBytes;
 
-            const elapsedSeconds = (Date.now() - startTime) / 1000;
-            if (elapsedSeconds > 0.5) {
-                const bytesPerSec = uploadedBytes / elapsedSeconds;
-                const mbPerSec = (bytesPerSec / (1024 * 1024)).toFixed(2);
-                uploadSpeed.textContent = `${mbPerSec} MB/s`;
-            }
+            // Snap percentage to exactly correct value after chunk confirmed
+            const pct = Math.min(100, Math.round((uploadedBytes / totalSize) * 100));
+            uploadPercentage.textContent = `${pct}%`;
+            uploadProgressBar.style.width = `${pct}%`;
         }
 
         uploadStatusText.textContent = "✅ Saved to Vault!";
+        uploadPercentage.textContent = "100%";
+        uploadProgressBar.style.width = "100%";
     }
 
     // 4. IMPORT GOOGLE DRIVE LINK FORM
