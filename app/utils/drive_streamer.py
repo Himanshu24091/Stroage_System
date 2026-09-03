@@ -167,8 +167,9 @@ def create_stealth_stream_response(file_id: str, direct_url: str, filename: str,
             parts = json.loads(parts_json)
 
             # CRITICAL: Sort by part number to guarantee correct byte order
-            parts = sorted(parts, key=lambda p: int(p.get("part", 0)))
-            total_file_size = sum(p.get("size", 0) for p in parts)
+            # Supports both compact keys ('p', 'id', 's') and legacy keys ('part', 'file_id', 'size')
+            parts = sorted(parts, key=lambda p: int(p.get("p") or p.get("part") or 0))
+            total_file_size = sum(int(p.get("s") or p.get("size") or 0) for p in parts)
 
             byte_start = 0
             byte_end = total_file_size - 1
@@ -192,8 +193,8 @@ def create_stealth_stream_response(file_id: str, direct_url: str, filename: str,
                 current_offset = 0   # absolute byte offset of the start of this part
 
                 for part in parts:
-                    part_id = part.get("file_id")
-                    part_size = int(part.get("size", 0))
+                    part_id = part.get("id") or part.get("file_id")
+                    part_size = int(part.get("s") or part.get("size") or 0)
 
                     if not part_id or part_size == 0:
                         current_offset += part_size

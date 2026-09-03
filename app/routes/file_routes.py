@@ -267,15 +267,15 @@ def upload_chunk():
                     "error": f"Upload incomplete: {len(all_parts)}/{total_chunks} parts received. Missing {missing} parts."
                 }), 409
 
+            # Compact part representation: p=part_number, id=drive_file_id, s=size
             parts_list = [{
-                "part": p.part_number,
-                "file_id": p.drive_file_id,
-                "size": p.part_size,
-                "download_url": ""
+                "p": p.part_number,
+                "id": p.drive_file_id,
+                "s": p.part_size
             } for p in all_parts]
 
             if total_chunks == 1:
-                drive_file_id = parts_list[0]["file_id"]
+                drive_file_id = parts_list[0]["id"]
                 drive_url = ""
             else:
                 drive_file_id = f"MULTIPART:{json.dumps(parts_list)}"
@@ -283,10 +283,6 @@ def upload_chunk():
 
             source_type = "gas_upload"
             final_file_size = total_size or sum(p.part_size for p in all_parts)
-
-            # Cleanup DB parts rows for this upload
-            ChunkUploadPart.query.filter_by(upload_id=upload_id).delete()
-            _release_upload_lock(upload_id)
 
         else:
             # ---------------------------------------------------------------
@@ -322,7 +318,7 @@ def upload_chunk():
             source_type = "local_upload"
             final_file_size = os.path.getsize(local_path)
 
-        # Create FileItem record in DB
+        # Create FileItem record in DB (drive_file_id is TEXT, holds unlimited length)
         category = FileItem.detect_category(filename, mime_type)
         new_item = FileItem(
             user_id=g.current_user.id,
@@ -337,7 +333,16 @@ def upload_chunk():
         db.session.add(new_item)
         db.session.commit()
 
-        print(f"[UPLOAD-CHUNK] ✅ Completed: '{filename}' ({final_file_size} bytes) user={g.current_user.id}")
+        # Clean up intermediate chunk records from PostgreSQL now that file is safely saved
+        if is_gas_configured() and total_chunks > 1:
+            try:
+                ChunkUploadPart.query.filter_by(upload_id=upload_id).delete()
+                db.session.commit()
+                _release_upload_lock(upload_id)
+            except Exception as clean_err:
+                print(f"[UPLOAD-CHUNK] Cleanup notice: {clean_err}")
+
+        print(f"[UPLOAD-CHUNK] ✅ Successfully saved: '{filename}' ({final_file_size} bytes, {total_chunks} parts) user={g.current_user.id}")
         return jsonify({
             "success": True,
             "message": "File uploaded and processed successfully!",

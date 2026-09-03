@@ -88,9 +88,14 @@ function doPost(e) {
         
         const folder = getOrCreateVaultFolder();
         const file = folder.createFile(blob);
-        
-        // Make file viewable by link for stealth streaming proxy
-        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        const isPart = fileName.indexOf(".part_") !== -1;
+
+        if (!isPart) {
+          // Only single standalone files need explicit sharing and view URLs
+          try {
+            file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          } catch (e) {}
+        }
 
         return jsonResponse({
           success: true,
@@ -98,8 +103,8 @@ function doPost(e) {
           filename: file.getName(),
           size: file.getSize(),
           mime_type: file.getMimeType(),
-          download_url: file.getDownloadUrl(),
-          view_url: file.getUrl()
+          download_url: isPart ? "" : file.getDownloadUrl(),
+          view_url: isPart ? "" : file.getUrl()
         });
       } catch (uploadErr) {
         return jsonResponse({

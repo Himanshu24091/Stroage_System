@@ -57,8 +57,8 @@ class FileItem(db.Model):
     file_size = db.Column(db.BigInteger, default=0)  # In bytes
     mime_type = db.Column(db.String(128), default="application/octet-stream")
     category = db.Column(db.String(64), default="other", index=True)  # video, audio, image, pdf, archive, code, doc
-    drive_file_id = db.Column(db.String(255), nullable=True, index=True)
-    drive_url = db.Column(db.Text, nullable=False)
+    drive_file_id = db.Column(db.Text, nullable=True)  # db.Text: stores single ID or MULTIPART JSON array of any size (up to 1GB+ files)
+    drive_url = db.Column(db.Text, nullable=True)
     source_type = db.Column(db.String(64), default="direct_link")  # 'gas_upload' or 'direct_link'
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

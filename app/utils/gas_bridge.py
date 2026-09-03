@@ -162,7 +162,7 @@ def delete_file_from_gas(file_id: str) -> dict:
             parts_json = file_id.replace("MULTIPART:", "", 1)
             parts = json.loads(parts_json)
             for p in parts:
-                p_id = p.get("file_id")
+                p_id = p.get("id") or p.get("file_id")
                 if p_id:
                     requests.post(
                         Config.GAS_WEBHOOK_URL,
