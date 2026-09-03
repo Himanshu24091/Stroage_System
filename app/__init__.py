@@ -43,6 +43,16 @@ def create_app(config_class=Config):
             "database": "connected"
         }), 200
 
+    # Direct Favicon endpoint (prevents 404 from browser requests)
+    from flask import send_from_directory
+    @app.route("/favicon.ico")
+    def favicon():
+        return send_from_directory(
+            os.path.join(app.root_path, "static"),
+            "favicon.ico",
+            mimetype="image/vnd.microsoft.icon"
+        )
+
     # Ensure tables are created and schema is migrated
     with app.app_context():
         from app.utils.db_models import User, FileItem, SystemNotice, ChunkUploadPart

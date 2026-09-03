@@ -64,6 +64,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const uploadPercentage = document.getElementById("uploadPercentage");
     const uploadProgressBar = document.getElementById("uploadProgressBar");
     const uploadSpeed = document.getElementById("uploadSpeed");
+    const uploadTimer = document.getElementById("uploadTimer");
     const uploadStatusText = document.getElementById("uploadStatusText");
     const cancelUploadBtn = document.getElementById("cancelUploadBtn");
 
@@ -532,7 +533,15 @@ document.addEventListener("DOMContentLoaded", () => {
         uploadPercentage.textContent = "0%";
         uploadProgressBar.style.width = "0%";
         uploadSpeed.textContent = "0 MB/s";
+        if (uploadTimer) uploadTimer.innerHTML = '⏱️ 00:00';
         uploadStatusText.textContent = "Preparing chunked stream...";
+
+        function formatDuration(sec) {
+            sec = Math.max(0, Math.floor(sec));
+            const m = Math.floor(sec / 60);
+            const s = sec % 60;
+            return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+        }
 
         // 4MB chunks — GAS base64-encodes payload so actual POST body is ~5.3MB,
         // safely under GAS's ~50MB execution limit and well under Railway's timeout
@@ -544,81 +553,111 @@ document.addEventListener("DOMContentLoaded", () => {
 
         let uploadedBytes = 0;   // bytes confirmed by server
         let chunkBaseBytes = 0;  // bytes from completed chunks (for progress calc)
+        let lastInFlight = 0;
 
-        for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-            if (cancelRequested) throw new Error("Cancelled");
-
-            const start = chunkIndex * CHUNK_SIZE;
-            const end = Math.min(start + CHUNK_SIZE, totalSize);
-            const chunkBlob = file.slice(start, end);
-            const chunkSize = end - start;
-
-            const formData = new FormData();
-            formData.append("chunk", chunkBlob);
-            formData.append("upload_id", uploadId);
-            formData.append("chunk_index", chunkIndex);
-            formData.append("total_chunks", totalChunks);
-            formData.append("total_size", totalSize);
-            formData.append("filename", file.name);
-            formData.append("mime_type", file.type || "application/octet-stream");
-
-            const isLastChunk = (chunkIndex === totalChunks - 1);
-            uploadStatusText.textContent = isLastChunk
-                ? `Finalizing upload (${chunkIndex + 1}/${totalChunks})...`
-                : `Uploading chunk ${chunkIndex + 1} of ${totalChunks}...`;
-
-            // Retry loop (up to 3 attempts per chunk)
-            let attempts = 0;
-            let success = false;
-            let lastError = null;
-
-            while (attempts < 3 && !success && !cancelRequested) {
-                attempts++;
-                try {
-                    await uploadChunkXHR(formData, (loaded, total) => {
-                        // Real-time progress: committed chunks + what's in-flight right now
-                        const inFlight = (total > 0) ? (loaded / total) * chunkSize : 0;
-                        const totalUploaded = chunkBaseBytes + inFlight;
-                        const pct = Math.min(100, Math.round((totalUploaded / totalSize) * 100));
-
-                        uploadPercentage.textContent = `${pct}%`;
-                        uploadProgressBar.style.width = `${pct}%`;
-
-                        const elapsedSec = (Date.now() - startTime) / 1000;
-                        if (elapsedSec > 0.3) {
-                            const mbps = ((chunkBaseBytes + inFlight) / (1024 * 1024) / elapsedSec).toFixed(2);
-                            uploadSpeed.textContent = `${mbps} MB/s`;
-                        }
-                    });
-                    success = true;
-                } catch (err) {
-                    lastError = err;
-                    if (cancelRequested) break;
-                    if (attempts < 3) {
-                        uploadStatusText.textContent = `Retrying chunk ${chunkIndex + 1} (attempt ${attempts + 1}/3)...`;
-                        await new Promise(r => setTimeout(r, 2000 * attempts)); // backoff
-                    }
+        // Active background timer that ticks every 500ms
+        let liveTimerInterval = setInterval(() => {
+            const elapsed = (Date.now() - startTime) / 1000;
+            if (uploadTimer) {
+                const totalUploadedSoFar = chunkBaseBytes + lastInFlight;
+                const bps = elapsed > 0.5 ? totalUploadedSoFar / elapsed : 0;
+                if (bps > 1024 && totalUploadedSoFar < totalSize) {
+                    const remSec = (totalSize - totalUploadedSoFar) / bps;
+                    uploadTimer.innerHTML = `⏱️ ${formatDuration(elapsed)} <span style="opacity:0.75;font-weight:400;font-size:0.72rem;">(~${formatDuration(remSec)} left)</span>`;
+                } else {
+                    uploadTimer.innerHTML = `⏱️ ${formatDuration(elapsed)}`;
                 }
             }
+        }, 500);
 
-            if (cancelRequested) throw new Error("Cancelled");
+        try {
+            for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+                if (cancelRequested) throw new Error("Cancelled");
 
-            if (!success) {
-                throw new Error(`Chunk ${chunkIndex + 1}/${totalChunks} failed after 3 attempts: ${lastError?.message || 'Unknown error'}`);
+                const start = chunkIndex * CHUNK_SIZE;
+                const end = Math.min(start + CHUNK_SIZE, totalSize);
+                const chunkBlob = file.slice(start, end);
+                const chunkSize = end - start;
+
+                const formData = new FormData();
+                formData.append("chunk", chunkBlob);
+                formData.append("upload_id", uploadId);
+                formData.append("chunk_index", chunkIndex);
+                formData.append("total_chunks", totalChunks);
+                formData.append("total_size", totalSize);
+                formData.append("filename", file.name);
+                formData.append("mime_type", file.type || "application/octet-stream");
+
+                const isLastChunk = (chunkIndex === totalChunks - 1);
+                uploadStatusText.textContent = isLastChunk
+                    ? `Finalizing upload (${chunkIndex + 1}/${totalChunks})...`
+                    : `Uploading chunk ${chunkIndex + 1} of ${totalChunks}...`;
+
+                // Retry loop (up to 3 attempts per chunk)
+                let attempts = 0;
+                let success = false;
+                let lastError = null;
+
+                while (attempts < 3 && !success && !cancelRequested) {
+                    attempts++;
+                    try {
+                        await uploadChunkXHR(formData, (loaded, total) => {
+                            // Real-time progress: committed chunks + what's in-flight right now
+                            const inFlight = (total > 0) ? (loaded / total) * chunkSize : 0;
+                            lastInFlight = inFlight;
+                            const totalUploaded = chunkBaseBytes + inFlight;
+                            const pct = Math.min(100, Math.round((totalUploaded / totalSize) * 100));
+
+                            uploadPercentage.textContent = `${pct}%`;
+                            uploadProgressBar.style.width = `${pct}%`;
+
+                            const elapsedSec = (Date.now() - startTime) / 1000;
+                            if (elapsedSec > 0.3) {
+                                const mbps = (totalUploaded / (1024 * 1024) / elapsedSec).toFixed(2);
+                                uploadSpeed.textContent = `${mbps} MB/s`;
+                            }
+                        });
+                        success = true;
+                        lastInFlight = 0;
+                    } catch (err) {
+                        lastError = err;
+                        lastInFlight = 0;
+                        if (cancelRequested) break;
+                        if (attempts < 3) {
+                            uploadStatusText.textContent = `Retrying chunk ${chunkIndex + 1} (attempt ${attempts + 1}/3)...`;
+                            await new Promise(r => setTimeout(r, 2000 * attempts)); // backoff
+                        }
+                    }
+                }
+
+                if (cancelRequested) throw new Error("Cancelled");
+
+                if (!success) {
+                    throw new Error(`Chunk ${chunkIndex + 1}/${totalChunks} failed after 3 attempts: ${lastError?.message || 'Unknown error'}`);
+                }
+
+                chunkBaseBytes += chunkSize;
+                uploadedBytes = chunkBaseBytes;
+
+                // Snap percentage to exactly correct value after chunk confirmed
+                const pct = Math.min(100, Math.round((uploadedBytes / totalSize) * 100));
+                uploadPercentage.textContent = `${pct}%`;
+                uploadProgressBar.style.width = `${pct}%`;
             }
 
-            chunkBaseBytes += chunkSize;
-            uploadedBytes = chunkBaseBytes;
+            clearInterval(liveTimerInterval);
+            const totalDurationSec = (Date.now() - startTime) / 1000;
+            if (uploadTimer) {
+                uploadTimer.innerHTML = `⏱️ ${formatDuration(totalDurationSec)} total`;
+            }
 
-            // Snap percentage to exactly correct value after chunk confirmed
-            const pct = Math.min(100, Math.round((uploadedBytes / totalSize) * 100));
-            uploadPercentage.textContent = `${pct}%`;
-            uploadProgressBar.style.width = `${pct}%`;
+            uploadStatusText.textContent = "✅ Saved to Vault!";
+            uploadPercentage.textContent = "100%";
+            uploadProgressBar.style.width = "100%";
+        } catch (err) {
+            clearInterval(liveTimerInterval);
+            throw err;
         }
-
-        uploadStatusText.textContent = "✅ Saved to Vault!";
-        uploadPercentage.textContent = "100%";
-        uploadProgressBar.style.width = "100%";
     }
 
     // 4. IMPORT GOOGLE DRIVE LINK FORM
