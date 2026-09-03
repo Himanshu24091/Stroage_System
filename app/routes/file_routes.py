@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, abort, g
 from config import Config
 from app import db
-from app.utils.db_models import FileItem, SystemNotice, ChunkUploadPart
+from app.utils.db_models import User, FileItem, SystemNotice, ChunkUploadPart
 from app.utils.auth_guard import require_login
 from app.utils.drive_streamer import extract_drive_id, create_stealth_stream_response, USER_AGENT, is_drive_folder_url, extract_drive_folder_id
 from app.utils.gas_bridge import upload_file_to_gas, upload_file_from_disk_to_gas, delete_file_from_gas, get_storage_stats_from_gas, is_gas_configured, get_folder_files_from_gas
