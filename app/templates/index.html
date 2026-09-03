@@ -245,8 +245,8 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{{ url_for('static', filename='js/preview.js') }}"></script>
-<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/preview.js') }}?v=3.5"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=3.5"></script>
 {% if enable_auth %}
 <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
 {% endif %}

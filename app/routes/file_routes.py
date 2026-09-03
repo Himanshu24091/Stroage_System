@@ -124,7 +124,11 @@ def upload_file():
     category = FileItem.detect_category(filename, mime_type)
 
     current_uid = getattr(g.current_user, "id", None)
-    target_user_id = current_uid if current_uid and current_uid != 0 and User.query.get(current_uid) else None
+    if current_uid and current_uid != 0 and User.query.get(current_uid):
+        target_user_id = current_uid
+    else:
+        first_user = User.query.order_by(User.id.asc()).first()
+        target_user_id = first_user.id if first_user else 1
 
     new_item = FileItem(
         user_id=target_user_id,
@@ -188,9 +192,13 @@ def upload_chunk():
             "error": f"Chunk too large: {chunk_size // (1024*1024)}MB. Max 16MB."
         }), 413
 
-    # Safe foreign-key resolution (SuperAdmin id=0 -> None to satisfy PostgreSQL FK)
+    # Safe foreign-key and NOT-NULL resolution (SuperAdmin id=0 or guests fallback to primary user or 1)
     current_uid = getattr(g.current_user, "id", None)
-    target_user_id = current_uid if current_uid and current_uid != 0 and User.query.get(current_uid) else None
+    if current_uid and current_uid != 0 and User.query.get(current_uid):
+        target_user_id = current_uid
+    else:
+        first_user = User.query.order_by(User.id.asc()).first()
+        target_user_id = first_user.id if first_user else 1
 
     try:
         if is_gas_configured():

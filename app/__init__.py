@@ -49,31 +49,24 @@ def create_app(config_class=Config):
         db.create_all()
 
         # Database Schema Migrations for PostgreSQL / SQLite
-        try:
-            from sqlalchemy import text
-            with db.engine.connect() as conn:
-                # 1. Ensure user_id column exists
+        from sqlalchemy import text
+        db_uri = str(db.engine.url).lower()
+        if "postgres" in db_uri:
+            migration_statements = [
+                "ALTER TABLE file_items ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);",
+                "DROP INDEX IF EXISTS ix_file_items_drive_file_id;",
+                "ALTER TABLE file_items ALTER COLUMN drive_file_id TYPE TEXT;",
+                "ALTER TABLE file_items ALTER COLUMN drive_url DROP NOT NULL;",
+                "ALTER TABLE chunk_upload_parts DROP CONSTRAINT IF EXISTS chunk_upload_parts_user_id_fkey;",
+                "ALTER TABLE chunk_upload_parts ALTER COLUMN user_id DROP NOT NULL;",
+            ]
+            for stmt in migration_statements:
                 try:
-                    conn.execute(text("ALTER TABLE file_items ADD COLUMN user_id INTEGER REFERENCES users(id);"))
-                    conn.commit()
-                except Exception:
-                    pass
-
-                # 2. PostgreSQL migrations: expand drive_file_id from VARCHAR(255) to TEXT
-                # and drop btree index that crashes on strings > 2704 bytes
-                db_uri = str(db.engine.url).lower()
-                if "postgres" in db_uri:
-                    try:
-                        conn.execute(text("DROP INDEX IF EXISTS ix_file_items_drive_file_id;"))
-                        conn.execute(text("ALTER TABLE file_items ALTER COLUMN drive_file_id TYPE TEXT;"))
-                        conn.execute(text("ALTER TABLE file_items ALTER COLUMN drive_url DROP NOT NULL;"))
-                        conn.execute(text("ALTER TABLE chunk_upload_parts DROP CONSTRAINT IF EXISTS chunk_upload_parts_user_id_fkey;"))
-                        conn.execute(text("ALTER TABLE chunk_upload_parts ALTER COLUMN user_id DROP NOT NULL;"))
+                    with db.engine.connect() as conn:
+                        conn.execute(text(stmt))
                         conn.commit()
-                        print("[DB MIGRATION] Successfully updated drive_file_id to TEXT and chunk_upload_parts in PostgreSQL")
-                    except Exception as pg_err:
-                        print(f"[DB MIGRATION] PostgreSQL migration notice: {pg_err}")
-        except Exception as e:
-            print(f"[DB MIGRATION] General migration notice: {e}")
+                        print(f"[DB MIGRATION] Executed: {stmt}")
+                except Exception as pg_err:
+                    print(f"[DB MIGRATION] Notice on ({stmt}): {pg_err}")
 
     return app
