@@ -502,7 +502,14 @@ document.addEventListener("DOMContentLoaded", () => {
                         reject(new Error("Invalid JSON response from server"));
                     }
                 } else {
-                    reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
+                    let errMsg = `HTTP ${xhr.status}`;
+                    try {
+                        const errData = JSON.parse(xhr.responseText);
+                        if (errData && errData.error) errMsg = errData.error;
+                    } catch (e) {
+                        if (xhr.statusText) errMsg += `: ${xhr.statusText}`;
+                    }
+                    reject(new Error(errMsg));
                 }
             });
 

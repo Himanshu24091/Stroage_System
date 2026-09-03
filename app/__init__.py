@@ -67,8 +67,10 @@ def create_app(config_class=Config):
                         conn.execute(text("DROP INDEX IF EXISTS ix_file_items_drive_file_id;"))
                         conn.execute(text("ALTER TABLE file_items ALTER COLUMN drive_file_id TYPE TEXT;"))
                         conn.execute(text("ALTER TABLE file_items ALTER COLUMN drive_url DROP NOT NULL;"))
+                        conn.execute(text("ALTER TABLE chunk_upload_parts DROP CONSTRAINT IF EXISTS chunk_upload_parts_user_id_fkey;"))
+                        conn.execute(text("ALTER TABLE chunk_upload_parts ALTER COLUMN user_id DROP NOT NULL;"))
                         conn.commit()
-                        print("[DB MIGRATION] Successfully updated drive_file_id to TEXT in PostgreSQL")
+                        print("[DB MIGRATION] Successfully updated drive_file_id to TEXT and chunk_upload_parts in PostgreSQL")
                     except Exception as pg_err:
                         print(f"[DB MIGRATION] PostgreSQL migration notice: {pg_err}")
         except Exception as e:

@@ -167,7 +167,7 @@ class ChunkUploadPart(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     upload_id = db.Column(db.String(64), nullable=False, index=True)   # unique per upload session
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, nullable=True, index=True)         # optional, no strict FK to allow admin (id=0) or guest uploads
     part_number = db.Column(db.Integer, nullable=False)                 # 1-based index
     total_parts = db.Column(db.Integer, nullable=False)
     drive_file_id = db.Column(db.String(255), nullable=False)           # Google Drive file_id of this part
