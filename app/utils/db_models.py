@@ -17,6 +17,9 @@ class User(db.Model):
     # Relationship to files
     files = db.relationship("FileItem", back_populates="user", cascade="all, delete-orphan", lazy="dynamic")
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
     def set_password(self, password: str):
         """Hashes and sets user password"""
         self.password_hash = generate_password_hash(password)
@@ -65,6 +68,9 @@ class FileItem(db.Model):
 
     # Relationship to user
     user = db.relationship("User", back_populates="files")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     @property
     def formatted_size(self):
@@ -141,6 +147,9 @@ class SystemNotice(db.Model):
 
     user = db.relationship("User", backref=db.backref("notices", cascade="all, delete-orphan", lazy="dynamic"))
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -181,6 +190,9 @@ class ChunkUploadPart(db.Model):
     __table_args__ = (
         db.UniqueConstraint("upload_id", "part_number", name="uq_upload_part"),
     )
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def to_dict(self):
         return {
