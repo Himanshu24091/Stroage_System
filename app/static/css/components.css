@@ -692,44 +692,118 @@ input:focus,
 .files-table-view {
     width: 100%;
     overflow-x: auto;
-    background: var(--bg-glass-card);
-    border: 1px solid var(--border-glass);
+    background: rgba(30, 41, 59, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: var(--radius-lg);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
 }
 
+.files-table,
 .vault-table {
-    width: 100%;
+    width: 100% !important;
     border-collapse: collapse;
     text-align: left;
-    font-size: 0.9rem;
+    font-size: 0.88rem;
+    table-layout: auto;
 }
 
+.files-table th,
 .vault-table th {
-    padding: 14px 18px;
-    background: rgba(10, 13, 20, 0.6);
+    padding: 14px 16px;
+    background: rgba(15, 23, 42, 0.75);
     color: var(--text-muted);
     font-weight: 600;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    border-bottom: 1px solid var(--border-glass);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    white-space: nowrap;
 }
 
+.files-table td,
 .vault-table td {
-    padding: 14px 18px;
+    padding: 12px 16px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-    color: var(--text-main);
+    color: #cbd5e1;
     vertical-align: middle;
 }
 
+.files-table tr:hover td,
 .vault-table tr:hover td {
     background: rgba(255, 255, 255, 0.03);
 }
 
-.table-file-cell {
+.files-table tr.selected td {
+    background: rgba(56, 189, 248, 0.1) !important;
+}
+
+.table-file-info {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
+    cursor: pointer;
+}
+
+.table-icon {
+    font-size: 1.25rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.table-filename {
+    font-weight: 600;
+    color: #f1f5f9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 480px;
+    transition: color 0.15s ease;
+}
+
+.table-name-cell:hover .table-filename {
+    color: #38bdf8;
+}
+
+.badge-source {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-muted);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.table-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    position: relative;
+}
+
+.table-actions .btn-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #cbd5e1;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-size: 0.9rem;
+}
+
+.table-actions .btn-icon:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.2);
 }
 
 /* Empty State */

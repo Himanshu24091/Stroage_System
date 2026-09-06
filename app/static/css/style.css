@@ -855,9 +855,25 @@ body::after {
     color: var(--text-muted);
 }
 
+/* Elevate card/row when dropdown menu is open above all sibling cards */
+.file-card:has(.dropdown-menu:not(.hidden)),
+.folder-card:has(.dropdown-menu:not(.hidden)),
+.file-card.menu-open,
+.folder-card.menu-open,
+tr.menu-open,
+tr:has(.dropdown-menu:not(.hidden)) {
+    z-index: 60 !important;
+}
+
+.file-card:hover,
+.folder-card:hover {
+    z-index: 10;
+}
+
 /* Dropdowns */
 .dropdown-wrap {
     position: relative;
+    z-index: 100;
 }
 
 .dropdown-menu {
@@ -865,14 +881,15 @@ body::after {
     top: 100%;
     right: 0;
     margin-top: 4px;
-    min-width: 160px;
-    background: #0f172a;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 8px;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
-    padding: 5px 0;
-    z-index: 100;
-    backdrop-filter: blur(12px);
+    min-width: 170px;
+    background: #0b1329;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 10px;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08);
+    padding: 6px 0;
+    z-index: 1000 !important;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
 }
 
 .dropdown-menu.hidden {

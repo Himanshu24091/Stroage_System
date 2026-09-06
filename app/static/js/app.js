@@ -338,10 +338,37 @@ document.addEventListener("DOMContentLoaded", () => {
                 e.stopPropagation();
                 const fid = btn.getAttribute("data-folder-menu");
                 const menu = document.getElementById(`folderMenu_${fid}`);
+                const parentCard = btn.closest(".folder-card");
+
                 document.querySelectorAll(".dropdown-menu").forEach(m => {
                     if (m !== menu) m.classList.add("hidden");
                 });
-                if (menu) menu.classList.toggle("hidden");
+                document.querySelectorAll(".file-card, .folder-card, tr").forEach(c => {
+                    if (c !== parentCard) c.classList.remove("menu-open");
+                });
+
+                if (menu) {
+                    const isOpening = menu.classList.contains("hidden");
+                    menu.classList.toggle("hidden");
+                    if (parentCard) {
+                        parentCard.classList.toggle("menu-open", isOpening);
+                    }
+                    if (isOpening) {
+                        const btnRect = btn.getBoundingClientRect();
+                        const spaceBelow = window.innerHeight - btnRect.bottom;
+                        if (spaceBelow < 220 && btnRect.top > 220) {
+                            menu.style.top = "auto";
+                            menu.style.bottom = "100%";
+                            menu.style.marginTop = "0";
+                            menu.style.marginBottom = "4px";
+                        } else {
+                            menu.style.top = "100%";
+                            menu.style.bottom = "auto";
+                            menu.style.marginTop = "4px";
+                            menu.style.marginBottom = "0";
+                        }
+                    }
+                }
             });
         });
 
@@ -562,13 +589,13 @@ document.addEventListener("DOMContentLoaded", () => {
             <table class="files-table">
                 <thead>
                     <tr>
-                        <th style="width: 40px;"></th>
-                        <th style="width: 30px;">⭐</th>
-                        <th>Name</th>
-                        <th>Size</th>
-                        <th>Category</th>
-                        <th>Source</th>
-                        <th style="text-align: right;">Actions</th>
+                        <th style="width: 44px; text-align: center;"></th>
+                        <th style="width: 36px; text-align: center;">⭐</th>
+                        <th class="col-name">Name</th>
+                        <th style="width: 110px;">Size</th>
+                        <th style="width: 110px;">Category</th>
+                        <th style="width: 130px;">Source</th>
+                        <th style="width: 140px; text-align: right;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -577,11 +604,11 @@ document.addEventListener("DOMContentLoaded", () => {
                         const isStarred = file.is_starred;
                         return `
                             <tr class="${isSelected ? 'selected' : ''}" data-id="${file.id}">
-                                <td>
+                                <td style="text-align: center;">
                                     <input type="checkbox" class="file-checkbox" data-check-id="${file.id}" ${isSelected ? 'checked' : ''}>
                                 </td>
-                                <td>
-                                    <button class="table-star-btn ${isStarred ? 'starred' : ''}" data-file-star="${file.id}">
+                                <td style="text-align: center;">
+                                    <button class="table-star-btn ${isStarred ? 'starred' : ''}" data-file-star="${file.id}" title="${isStarred ? 'Unstar' : 'Star'}">
                                         ${isStarred ? '★' : '☆'}
                                     </button>
                                 </td>
@@ -591,15 +618,17 @@ document.addEventListener("DOMContentLoaded", () => {
                                         <span class="table-filename" title="${escapeHtml(file.filename)}">${escapeHtml(file.filename)}</span>
                                     </div>
                                 </td>
-                                <td>${file.formatted_size}</td>
+                                <td style="white-space: nowrap;">${file.formatted_size}</td>
                                 <td>${getCategoryBadge(file.category)}</td>
                                 <td><span class="badge-source">${file.source_type === 'google_api_upload' ? 'Drive API' : (file.source_type === 'gas_upload' ? 'Drive Vault' : 'Direct Link')}</span></td>
                                 <td style="text-align: right;">
                                     <div class="table-actions">
                                         <button class="btn-icon" data-action="preview" data-id="${file.id}" title="Preview">👁️</button>
                                         <a href="${file.download_url}" class="btn-icon" title="Download">⬇️</a>
-                                        <button class="btn-icon" data-menu-id="${file.id}" title="More">⋮</button>
-                                        <div class="dropdown-menu hidden" id="fileMenu_${file.id}" style="right:10px;">
+                                        <button class="btn-icon" data-menu-id="${file.id}" title="More options">⋮</button>
+                                        <div class="dropdown-menu hidden" id="fileMenu_${file.id}">
+                                            <button class="dropdown-item" data-action="preview" data-id="${file.id}">👁️ Preview</button>
+                                            <a class="dropdown-item" href="${file.download_url}">⬇️ Download</a>
                                             <button class="dropdown-item" data-action="rename" data-id="${file.id}" data-name="${escapeHtml(file.filename)}">✏️ Rename</button>
                                             <button class="dropdown-item" data-action="move" data-id="${file.id}">📁 Move to...</button>
                                             <button class="dropdown-item" data-action="star" data-id="${file.id}">${isStarred ? '☆ Unstar' : '⭐ Star'}</button>
@@ -671,10 +700,37 @@ document.addEventListener("DOMContentLoaded", () => {
                 e.stopPropagation();
                 const fid = btn.getAttribute("data-menu-id");
                 const menu = document.getElementById(`fileMenu_${fid}`);
+                const parentCard = btn.closest(".file-card, tr");
+
                 document.querySelectorAll(".dropdown-menu").forEach(m => {
                     if (m !== menu) m.classList.add("hidden");
                 });
-                if (menu) menu.classList.toggle("hidden");
+                document.querySelectorAll(".file-card, .folder-card, tr").forEach(c => {
+                    if (c !== parentCard) c.classList.remove("menu-open");
+                });
+
+                if (menu) {
+                    const isOpening = menu.classList.contains("hidden");
+                    menu.classList.toggle("hidden");
+                    if (parentCard) {
+                        parentCard.classList.toggle("menu-open", isOpening);
+                    }
+                    if (isOpening) {
+                        const btnRect = btn.getBoundingClientRect();
+                        const spaceBelow = window.innerHeight - btnRect.bottom;
+                        if (spaceBelow < 260 && btnRect.top > 260) {
+                            menu.style.top = "auto";
+                            menu.style.bottom = "100%";
+                            menu.style.marginTop = "0";
+                            menu.style.marginBottom = "4px";
+                        } else {
+                            menu.style.top = "100%";
+                            menu.style.bottom = "auto";
+                            menu.style.marginTop = "4px";
+                            menu.style.marginBottom = "0";
+                        }
+                    }
+                }
             });
         });
 
@@ -687,6 +743,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const fname = btn.getAttribute("data-name");
 
                 document.querySelectorAll(".dropdown-menu").forEach(m => m.classList.add("hidden"));
+                document.querySelectorAll(".file-card, .folder-card, tr").forEach(c => c.classList.remove("menu-open"));
 
                 if (action === "preview") {
                     const file = allFiles.find(f => f.id === parseInt(fid));
@@ -711,6 +768,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Close any open dropdown menu when clicking anywhere outside
     document.addEventListener("click", () => {
         document.querySelectorAll(".dropdown-menu").forEach(m => m.classList.add("hidden"));
+        document.querySelectorAll(".file-card, .folder-card, tr").forEach(c => c.classList.remove("menu-open"));
     });
 
     function updateCardSelectionStyles() {
