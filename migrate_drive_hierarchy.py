@@ -101,23 +101,19 @@ def run_migration(verbose=True):
         migrate_folder_recursive(f)
 
     # -------------------------------------------------------------
-    # Step 3: Move Existing Files into Respective Folders on Google Drive
+    # Step 3: Move Database-Tracked Files into Respective Folders
     # -------------------------------------------------------------
     files = FileItem.query.all()
     if verbose:
-        print(f"\n[STEP 3] Checking and moving {len(files)} files to target folders...")
+        print(f"\n[STEP 3] Checking {len(files)} database-tracked files...")
 
     for file_item in files:
         if not file_item.drive_file_id:
             stats["files_skipped"] += 1
             continue
 
-        # Skip multipart json or legacy gas/local uploads if not drive ID
+        # Skip multipart json or legacy local uploads if not drive ID
         if file_item.drive_file_id.startswith("[") or file_item.drive_file_id.startswith("{"):
-            stats["files_skipped"] += 1
-            continue
-
-        if file_item.source_type not in ("google_api_upload", "direct_link"):
             stats["files_skipped"] += 1
             continue
 
@@ -137,6 +133,11 @@ def run_migration(verbose=True):
 
             # Check where file currently is
             current_parents = get_drive_file_parents(file_item.drive_file_id)
+            if not current_parents:
+                # File ID does not exist on Drive (or no permissions)
+                stats["files_skipped"] += 1
+                continue
+
             if target_drive_folder in current_parents:
                 stats["files_already_in_place"] += 1
                 if verbose:
@@ -160,6 +161,115 @@ def run_migration(verbose=True):
             stats["errors"].append(err_msg)
             if verbose:
                 print(f"  [FAIL] Error on file '{file_item.filename}': {e}")
+
+    # -------------------------------------------------------------
+    # Step 4: Direct Google Drive Root Scan & Migration
+    # (Moves all files currently sitting loose in Drive root into user's folder)
+    # -------------------------------------------------------------
+    import requests
+    from concurrent.futures import ThreadPoolExecutor
+    from config import Config
+    from app.utils.google_drive_api import get_auth_headers
+
+    primary_user = User.query.order_by(User.id.asc()).first()
+    default_target_folder = get_or_create_user_drive_folder(primary_user) if primary_user else None
+
+    # Collect known user folder IDs and app folder IDs so we never move folders
+    user_folder_ids = {u.drive_folder_id for u in users if u.drive_folder_id}
+    app_folder_ids = {f.drive_folder_id for f in Folder.query.all() if f.drive_folder_id}
+    known_folder_ids = user_folder_ids.union(app_folder_ids)
+
+    root_folder_id = Config.GOOGLE_DRIVE_FOLDER_ID
+    if verbose:
+        print(f"\n[STEP 4] Scanning Google Drive root ({root_folder_id}) for unorganized files...")
+
+    try:
+        headers = get_auth_headers()
+        url = f"https://www.googleapis.com/drive/v3/files?q='{root_folder_id}'+in+parents+and+trashed=false&fields=nextPageToken,files(id,name,mimeType,size)&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true"
+        root_items = []
+        while url:
+            resp = requests.get(url, headers=headers, timeout=25).json()
+            root_items.extend(resp.get("files", []))
+            token = resp.get("nextPageToken")
+            if token:
+                url = f"https://www.googleapis.com/drive/v3/files?q='{root_folder_id}'+in+parents+and+trashed=false&fields=nextPageToken,files(id,name,mimeType,size)&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true&pageToken={token}"
+            else:
+                break
+
+        # Exclude folders; only migrate loose files
+        files_to_migrate = [
+            it for it in root_items
+            if it["id"] not in known_folder_ids and it.get("mimeType") != "application/vnd.google-apps.folder"
+        ]
+
+        if verbose:
+            print(f"  Found {len(files_to_migrate)} loose files in root Google Drive folder.")
+            if files_to_migrate and primary_user:
+                print(f"  Migrating all into User '{primary_user.username}' (ID {primary_user.id}) folder...")
+
+        if files_to_migrate and default_target_folder:
+            existing_file_map = {f.drive_file_id: f for f in FileItem.query.all() if f.drive_file_id}
+
+            def process_drive_file(it):
+                item_id = it["id"]
+                item_name = it["name"]
+                target_dest = default_target_folder
+                db_file = existing_file_map.get(item_id)
+                if db_file:
+                    if db_file.folder and db_file.folder.drive_folder_id:
+                        target_dest = db_file.folder.drive_folder_id
+                    elif db_file.user and db_file.user.drive_folder_id:
+                        target_dest = db_file.user.drive_folder_id
+
+                moved = move_drive_item(item_id, target_dest, old_parent_id=root_folder_id)
+                return moved, item_name, target_dest
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                results = list(executor.map(process_drive_file, files_to_migrate))
+
+            # Register files in database if missing
+            new_db_items = []
+            for it in files_to_migrate:
+                item_id = it["id"]
+                if item_id not in existing_file_map and primary_user:
+                    item_name = it["name"]
+                    item_mime = it.get("mimeType", "application/octet-stream")
+                    item_size = int(it.get("size", 0)) if it.get("size") else 0
+                    category = FileItem.detect_category(item_name, item_mime)
+                    new_item = FileItem(
+                        user_id=primary_user.id,
+                        folder_id=None,
+                        filename=item_name,
+                        file_size=item_size,
+                        mime_type=item_mime,
+                        category=category,
+                        drive_file_id=item_id,
+                        drive_url="",
+                        source_type="google_api_upload"
+                    )
+                    db.session.add(new_item)
+                    new_db_items.append(new_item)
+
+            if new_db_items:
+                try:
+                    db.session.commit()
+                    if verbose:
+                        print(f"  [OK] Successfully indexed {len(new_db_items)} new files in database.")
+                except Exception as dbe:
+                    db.session.rollback()
+                    if verbose:
+                        print(f"  [FAIL] Database indexing notice: {dbe}")
+
+            for success, name, dest in results:
+                if success:
+                    stats["files_moved"] += 1
+                else:
+                    stats["errors"].append(f"Failed to move {name}")
+    except Exception as drive_scan_err:
+        err_msg = f"Step 4 Drive scan error: {drive_scan_err}"
+        stats["errors"].append(err_msg)
+        if verbose:
+            print(f"  [FAIL] {err_msg}")
 
     if verbose:
         print("\n" + "=" * 70)
