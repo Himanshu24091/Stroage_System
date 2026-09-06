@@ -12,6 +12,7 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     is_admin = db.Column(db.Boolean, default=False, index=True)
+    drive_folder_id = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationship to files
@@ -45,6 +46,7 @@ class User(db.Model):
             "username": self.username,
             "email": self.email,
             "is_admin": self.is_admin,
+            "drive_folder_id": self.drive_folder_id,
             "total_files": self.total_file_count,
             "total_bytes": self.total_storage_bytes,
             "created_at": self.created_at.isoformat() if self.created_at else None

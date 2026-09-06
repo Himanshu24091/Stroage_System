@@ -275,3 +275,83 @@ def _format_bytes(size: int) -> str:
         return f"{size / (1024 * 1024):.1f} MB"
     else:
         return f"{size / (1024 * 1024 * 1024):.2f} GB"
+
+def get_or_create_user_drive_folder(user) -> str:
+    """
+    Retrieves or creates a dedicated top-level Google Drive folder for the specified user.
+    Folder name: f"User_{user.username} (ID {user.id})"
+    Parent: Config.GOOGLE_DRIVE_FOLDER_ID
+    Returns the Google Drive folder ID.
+    Caches the folder ID in user.drive_folder_id to avoid redundant API queries.
+    """
+    if not is_google_api_configured() or not user:
+        return Config.GOOGLE_DRIVE_FOLDER_ID
+
+    # 1. Check if user already has a valid drive_folder_id cached in database
+    cached_id = getattr(user, "drive_folder_id", None)
+    if cached_id:
+        return cached_id
+
+    username_safe = getattr(user, "username", "anonymous")
+    user_id_val = getattr(user, "id", 0)
+    folder_name = f"User_{username_safe} (ID {user_id_val})"
+    parent_id = Config.GOOGLE_DRIVE_FOLDER_ID
+
+    try:
+        headers = get_auth_headers()
+
+        # 2. Check if folder already exists in parent Google Drive folder
+        escaped_name = folder_name.replace("'", "\\'")
+        query = f"name = '{escaped_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        if parent_id:
+            query += f" and '{parent_id}' in parents"
+
+        search_url = "https://www.googleapis.com/drive/v3/files"
+        search_params = {
+            "q": query,
+            "fields": "files(id, name)",
+            "supportsAllDrives": "true",
+            "includeItemsFromAllDrives": "true"
+        }
+        res = requests.get(search_url, headers=headers, params=search_params, timeout=15)
+        if res.status_code == 200:
+            files = res.json().get("files", [])
+            if files:
+                drive_folder_id = files[0]["id"]
+                user.drive_folder_id = drive_folder_id
+                try:
+                    from app import db
+                    db.session.commit()
+                except Exception:
+                    pass
+                print(f"[GOOGLE DRIVE] Linked existing folder for user '{username_safe}': {drive_folder_id}")
+                return drive_folder_id
+
+        # 3. Create folder if not found
+        create_url = "https://www.googleapis.com/drive/v3/files?supportsAllDrives=true"
+        metadata = {
+            "name": folder_name,
+            "mimeType": "application/vnd.google-apps.folder"
+        }
+        if parent_id:
+            metadata["parents"] = [parent_id]
+
+        create_res = requests.post(create_url, headers=headers, json=metadata, timeout=20)
+        if create_res.status_code in (200, 201):
+            drive_folder_id = create_res.json().get("id")
+            user.drive_folder_id = drive_folder_id
+            try:
+                from app import db
+                db.session.commit()
+            except Exception:
+                pass
+            print(f"[GOOGLE DRIVE] Created dedicated folder for user '{username_safe}': {drive_folder_id}")
+            return drive_folder_id
+        else:
+            print(f"[GOOGLE DRIVE] Could not create user folder: HTTP {create_res.status_code} - {create_res.text}")
+    except Exception as e:
+        print(f"[GOOGLE DRIVE] Error in get_or_create_user_drive_folder for '{username_safe}': {e}")
+
+    # Fallback to root folder if anything fails
+    return Config.GOOGLE_DRIVE_FOLDER_ID
+

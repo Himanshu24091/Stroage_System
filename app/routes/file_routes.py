@@ -16,7 +16,7 @@ from app.utils.db_models import User, Folder, FileItem, SystemNotice, ChunkUploa
 from app.utils.auth_guard import require_login
 from app.utils.drive_streamer import extract_drive_id, create_stealth_stream_response, USER_AGENT, is_drive_folder_url, extract_drive_folder_id, resolve_google_drive_stream, resolve_mime_type
 from app.utils.gas_bridge import upload_file_to_gas, upload_file_from_disk_to_gas, delete_file_from_gas, get_storage_stats_from_gas, is_gas_configured, get_folder_files_from_gas
-from app.utils.google_drive_api import is_google_api_configured, initiate_resumable_upload, upload_resumable_chunk, query_upload_status, delete_drive_file, get_storage_quota
+from app.utils.google_drive_api import is_google_api_configured, initiate_resumable_upload, upload_resumable_chunk, query_upload_status, delete_drive_file, get_storage_quota, get_or_create_user_drive_folder
 
 file_bp = Blueprint("file_bp", __name__)
 
@@ -121,7 +121,8 @@ def upload_file():
     file_size = len(file_bytes)
 
     if is_google_api_configured():
-        init_res = initiate_resumable_upload(filename, mime_type, file_size)
+        target_drive_folder = get_or_create_user_drive_folder(g.current_user)
+        init_res = initiate_resumable_upload(filename, mime_type, file_size, folder_id=target_drive_folder)
         if not init_res.get("success"):
             return jsonify({"success": False, "error": f"Google Drive API init error: {init_res.get('error')}"}), 502
 
@@ -262,11 +263,13 @@ def upload_chunk():
                 ).first()
 
                 if not session_part:
+                    target_user = User.query.get(target_user_id) if target_user_id else g.current_user
+                    target_drive_folder = get_or_create_user_drive_folder(target_user)
                     init_res = initiate_resumable_upload(
                         filename=filename,
                         mime_type=mime_type,
                         total_size=total_size,
-                        folder_id=Config.GOOGLE_DRIVE_FOLDER_ID
+                        folder_id=target_drive_folder
                     )
                     if not init_res.get("success"):
                         return jsonify({
