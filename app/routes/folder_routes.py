@@ -8,7 +8,7 @@ from app import db
 from app.utils.db_models import User, Folder, FileItem
 from app.utils.auth_guard import require_login
 from app.utils.drive_streamer import resolve_google_drive_stream
-from app.utils.google_drive_api import delete_drive_file, is_google_api_configured
+from app.utils.google_drive_api import delete_drive_file, is_google_api_configured, get_or_create_app_folder_in_drive, rename_drive_item
 from app.utils.gas_bridge import delete_file_from_gas
 
 folder_bp = Blueprint("folder_bp", __name__)
@@ -119,6 +119,14 @@ def create_folder():
     db.session.add(folder)
     db.session.commit()
 
+    # Sync folder creation to Google Drive in user's directory hierarchy
+    if is_google_api_configured():
+        try:
+            target_user = User.query.get(target_uid) if target_uid else g.current_user
+            get_or_create_app_folder_in_drive(folder, user=target_user)
+        except Exception as drive_err:
+            print(f"[GOOGLE DRIVE] Sync folder creation error: {drive_err}")
+
     return jsonify({
         "success": True,
         "message": f"Folder '{name}' created successfully",
@@ -142,6 +150,13 @@ def rename_folder(folder_id):
     new_name = new_name.replace("/", "-").replace("\\", "-")[:100]
     folder.name = new_name
     db.session.commit()
+
+    # Sync folder rename to Google Drive
+    if is_google_api_configured() and getattr(folder, "drive_folder_id", None):
+        try:
+            rename_drive_item(folder.drive_folder_id, new_name)
+        except Exception as e:
+            print(f"[GOOGLE DRIVE] Sync rename error: {e}")
 
     return jsonify({
         "success": True,
@@ -256,6 +271,13 @@ def _delete_folder_recursive(folder):
 
     for sub in folder.subfolders:
         _delete_folder_recursive(sub)
+
+    # Delete folder from Google Drive if synced
+    if getattr(folder, "drive_folder_id", None):
+        try:
+            delete_drive_file(folder.drive_folder_id)
+        except Exception:
+            pass
 
     db.session.delete(folder)
 

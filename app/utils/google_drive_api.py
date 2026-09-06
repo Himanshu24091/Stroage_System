@@ -355,3 +355,173 @@ def get_or_create_user_drive_folder(user) -> str:
     # Fallback to root folder if anything fails
     return Config.GOOGLE_DRIVE_FOLDER_ID
 
+
+def get_or_create_app_folder_in_drive(folder, user=None) -> str:
+    """
+    Option 2 (Full Directory Tree Hierarchy):
+    Retrieves or creates a matching sub-folder on Google Drive corresponding to an in-app Folder.
+    Hierarchy:
+    - If folder.parent_id is None: lives inside user's dedicated root folder on Google Drive.
+    - If folder.parent_id is set: lives inside parent folder's Google Drive folder.
+    Caches the resulting drive_folder_id in folder.drive_folder_id.
+    """
+    if not is_google_api_configured() or not folder:
+        return Config.GOOGLE_DRIVE_FOLDER_ID
+
+    # 1. Return cached ID if present
+    cached_id = getattr(folder, "drive_folder_id", None)
+    if cached_id:
+        return cached_id
+
+    # 2. Resolve parent Google Drive folder
+    parent_drive_id = None
+    if getattr(folder, "parent_id", None) and getattr(folder, "parent", None):
+        parent_drive_id = get_or_create_app_folder_in_drive(folder.parent, user=user)
+    else:
+        target_user = user or getattr(folder, "user", None)
+        if target_user:
+            parent_drive_id = get_or_create_user_drive_folder(target_user)
+
+    if not parent_drive_id:
+        parent_drive_id = Config.GOOGLE_DRIVE_FOLDER_ID
+
+    folder_name = getattr(folder, "name", "Folder")
+
+    try:
+        headers = get_auth_headers()
+
+        # 3. Check if folder already exists in Google Drive under parent_drive_id
+        escaped_name = folder_name.replace("'", "\\'")
+        query = f"name = '{escaped_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        if parent_drive_id:
+            query += f" and '{parent_drive_id}' in parents"
+
+        search_url = "https://www.googleapis.com/drive/v3/files"
+        search_params = {
+            "q": query,
+            "fields": "files(id, name)",
+            "supportsAllDrives": "true",
+            "includeItemsFromAllDrives": "true"
+        }
+        res = requests.get(search_url, headers=headers, params=search_params, timeout=15)
+        if res.status_code == 200:
+            files = res.json().get("files", [])
+            if files:
+                drive_folder_id = files[0]["id"]
+                folder.drive_folder_id = drive_folder_id
+                try:
+                    from app import db
+                    db.session.commit()
+                except Exception:
+                    pass
+                print(f"[GOOGLE DRIVE] Linked existing sub-folder '{folder_name}' (ID {drive_folder_id}) under parent {parent_drive_id}")
+                return drive_folder_id
+
+        # 4. Create sub-folder on Google Drive
+        create_url = "https://www.googleapis.com/drive/v3/files?supportsAllDrives=true"
+        metadata = {
+            "name": folder_name,
+            "mimeType": "application/vnd.google-apps.folder"
+        }
+        if parent_drive_id:
+            metadata["parents"] = [parent_drive_id]
+
+        create_res = requests.post(create_url, headers=headers, json=metadata, timeout=20)
+        if create_res.status_code in (200, 201):
+            drive_folder_id = create_res.json().get("id")
+            folder.drive_folder_id = drive_folder_id
+            try:
+                from app import db
+                db.session.commit()
+            except Exception:
+                pass
+            print(f"[GOOGLE DRIVE] Created sub-folder '{folder_name}' (ID {drive_folder_id}) under parent {parent_drive_id}")
+            return drive_folder_id
+        else:
+            print(f"[GOOGLE DRIVE] Could not create sub-folder '{folder_name}': HTTP {create_res.status_code} - {create_res.text}")
+    except Exception as e:
+        print(f"[GOOGLE DRIVE] Error in get_or_create_app_folder_in_drive for '{folder_name}': {e}")
+
+    return parent_drive_id or Config.GOOGLE_DRIVE_FOLDER_ID
+
+
+def rename_drive_item(drive_id: str, new_name: str) -> bool:
+    """Renames a file or folder on Google Drive"""
+    if not is_google_api_configured() or not drive_id or not new_name:
+        return False
+
+    try:
+        headers = get_auth_headers()
+        url = f"https://www.googleapis.com/drive/v3/files/{drive_id}?supportsAllDrives=true"
+        res = requests.patch(url, headers=headers, json={"name": new_name}, timeout=15)
+        if res.status_code == 200:
+            print(f"[GOOGLE DRIVE] Renamed item {drive_id} -> '{new_name}'")
+            return True
+        else:
+            print(f"[GOOGLE DRIVE] Failed to rename {drive_id}: HTTP {res.status_code} - {res.text}")
+            return False
+    except Exception as e:
+        print(f"[GOOGLE DRIVE] Error renaming item {drive_id}: {e}")
+        return False
+
+
+def get_drive_file_parents(drive_id: str) -> list:
+    """Returns list of parent folder IDs for a file/folder on Google Drive"""
+    if not is_google_api_configured() or not drive_id:
+        return []
+
+    try:
+        headers = get_auth_headers()
+        url = f"https://www.googleapis.com/drive/v3/files/{drive_id}"
+        params = {
+            "fields": "parents",
+            "supportsAllDrives": "true"
+        }
+        res = requests.get(url, headers=headers, params=params, timeout=15)
+        if res.status_code == 200:
+            return res.json().get("parents", [])
+    except Exception as e:
+        print(f"[GOOGLE DRIVE] Error fetching parents for {drive_id}: {e}")
+    return []
+
+
+def move_drive_item(drive_id: str, new_parent_id: str, old_parent_id: str = None) -> bool:
+    """
+    Moves a file or folder on Google Drive to a new parent folder.
+    Preserves the file's ID completely so stream and preview links never break.
+    """
+    if not is_google_api_configured() or not drive_id or not new_parent_id:
+        return False
+
+    try:
+        headers = get_auth_headers()
+        # If old_parent_id is not supplied, fetch current parents from API
+        if not old_parent_id:
+            current_parents = get_drive_file_parents(drive_id)
+            if new_parent_id in current_parents:
+                # Already in the destination folder
+                return True
+            remove_parents = ",".join(current_parents)
+        else:
+            remove_parents = old_parent_id
+
+        url = f"https://www.googleapis.com/drive/v3/files/{drive_id}"
+        params = {
+            "addParents": new_parent_id,
+            "supportsAllDrives": "true"
+        }
+        if remove_parents:
+            params["removeParents"] = remove_parents
+
+        res = requests.patch(url, headers=headers, params=params, timeout=20)
+        if res.status_code == 200:
+            print(f"[GOOGLE DRIVE] Moved item {drive_id} to parent {new_parent_id}")
+            return True
+        else:
+            print(f"[GOOGLE DRIVE] Failed to move item {drive_id}: HTTP {res.status_code} - {res.text}")
+            return False
+    except Exception as e:
+        print(f"[GOOGLE DRIVE] Error moving item {drive_id}: {e}")
+        return False
+
+

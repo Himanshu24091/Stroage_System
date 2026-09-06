@@ -61,6 +61,7 @@ class Folder(db.Model):
     name = db.Column(db.String(255), nullable=False, index=True)
     parent_id = db.Column(db.Integer, db.ForeignKey("folders.id", ondelete="CASCADE"), nullable=True, index=True)
     color = db.Column(db.String(32), default="blue")  # blue, purple, emerald, amber, rose, indigo
+    drive_folder_id = db.Column(db.String(255), nullable=True)
     is_starred = db.Column(db.Boolean, default=False, index=True)
     is_trashed = db.Column(db.Boolean, default=False, index=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
@@ -112,6 +113,7 @@ class Folder(db.Model):
             "name": self.name,
             "parent_id": self.parent_id,
             "color": self.color or "blue",
+            "drive_folder_id": self.drive_folder_id,
             "is_starred": bool(self.is_starred),
             "is_trashed": bool(self.is_trashed),
             "file_count": self.file_count,

@@ -66,6 +66,7 @@ def create_app(config_class=Config):
         if "postgres" in db_uri:
             migration_statements = [
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS drive_folder_id VARCHAR(255);",
+                "ALTER TABLE folders ADD COLUMN IF NOT EXISTS drive_folder_id VARCHAR(255);",
                 "ALTER TABLE file_items ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);",
                 "DROP INDEX IF EXISTS ix_file_items_drive_file_id;",
                 "ALTER TABLE file_items ALTER COLUMN drive_file_id TYPE TEXT;",
@@ -98,6 +99,12 @@ def create_app(config_class=Config):
                     user_cols = {row[1] for row in user_res}
                     if "drive_folder_id" not in user_cols:
                         conn.execute(text("ALTER TABLE users ADD COLUMN drive_folder_id VARCHAR(255);"))
+
+                    # Check folders table
+                    folder_res = conn.execute(text("PRAGMA table_info(folders);")).fetchall()
+                    folder_cols = {row[1] for row in folder_res}
+                    if "drive_folder_id" not in folder_cols:
+                        conn.execute(text("ALTER TABLE folders ADD COLUMN drive_folder_id VARCHAR(255);"))
 
                     # Check file_items table
                     result = conn.execute(text("PRAGMA table_info(file_items);")).fetchall()

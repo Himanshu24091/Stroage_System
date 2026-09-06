@@ -16,7 +16,7 @@ from app.utils.db_models import User, Folder, FileItem, SystemNotice, ChunkUploa
 from app.utils.auth_guard import require_login
 from app.utils.drive_streamer import extract_drive_id, create_stealth_stream_response, USER_AGENT, is_drive_folder_url, extract_drive_folder_id, resolve_google_drive_stream, resolve_mime_type
 from app.utils.gas_bridge import upload_file_to_gas, upload_file_from_disk_to_gas, delete_file_from_gas, get_storage_stats_from_gas, is_gas_configured, get_folder_files_from_gas
-from app.utils.google_drive_api import is_google_api_configured, initiate_resumable_upload, upload_resumable_chunk, query_upload_status, delete_drive_file, get_storage_quota, get_or_create_user_drive_folder
+from app.utils.google_drive_api import is_google_api_configured, initiate_resumable_upload, upload_resumable_chunk, query_upload_status, delete_drive_file, get_storage_quota, get_or_create_user_drive_folder, get_or_create_app_folder_in_drive, move_drive_item
 
 file_bp = Blueprint("file_bp", __name__)
 
@@ -120,8 +120,30 @@ def upload_file():
     file_bytes = uploaded_file.read()
     file_size = len(file_bytes)
 
+    folder_id_raw = request.form.get("folder_id", None)
+    target_folder_id = None
+    if folder_id_raw and str(folder_id_raw).lower() not in ("null", "root", "", "undefined"):
+        try:
+            target_folder_id = int(folder_id_raw)
+        except (ValueError, TypeError):
+            target_folder_id = None
+
+    current_uid = getattr(g.current_user, "id", None)
+    if current_uid and current_uid != 0 and User.query.get(current_uid):
+        target_user = g.current_user
+        target_user_id = current_uid
+    else:
+        first_user = User.query.order_by(User.id.asc()).first()
+        target_user = first_user
+        target_user_id = first_user.id if first_user else 1
+
     if is_google_api_configured():
-        target_drive_folder = get_or_create_user_drive_folder(g.current_user)
+        if target_folder_id:
+            folder_obj = Folder.query.get(target_folder_id)
+            target_drive_folder = get_or_create_app_folder_in_drive(folder_obj, user=target_user) if folder_obj else get_or_create_user_drive_folder(target_user)
+        else:
+            target_drive_folder = get_or_create_user_drive_folder(target_user)
+
         init_res = initiate_resumable_upload(filename, mime_type, file_size, folder_id=target_drive_folder)
         if not init_res.get("success"):
             return jsonify({"success": False, "error": f"Google Drive API init error: {init_res.get('error')}"}), 502
@@ -155,21 +177,6 @@ def upload_file():
         source_type = "local_upload"
 
     category = FileItem.detect_category(filename, mime_type)
-
-    folder_id_raw = request.form.get("folder_id", None)
-    target_folder_id = None
-    if folder_id_raw and str(folder_id_raw).lower() not in ("null", "root", "", "undefined"):
-        try:
-            target_folder_id = int(folder_id_raw)
-        except (ValueError, TypeError):
-            target_folder_id = None
-
-    current_uid = getattr(g.current_user, "id", None)
-    if current_uid and current_uid != 0 and User.query.get(current_uid):
-        target_user_id = current_uid
-    else:
-        first_user = User.query.order_by(User.id.asc()).first()
-        target_user_id = first_user.id if first_user else 1
 
     new_item = FileItem(
         user_id=target_user_id,
@@ -264,7 +271,12 @@ def upload_chunk():
 
                 if not session_part:
                     target_user = User.query.get(target_user_id) if target_user_id else g.current_user
-                    target_drive_folder = get_or_create_user_drive_folder(target_user)
+                    if target_folder_id:
+                        folder_obj = Folder.query.get(target_folder_id)
+                        target_drive_folder = get_or_create_app_folder_in_drive(folder_obj, user=target_user) if folder_obj else get_or_create_user_drive_folder(target_user)
+                    else:
+                        target_drive_folder = get_or_create_user_drive_folder(target_user)
+
                     init_res = initiate_resumable_upload(
                         filename=filename,
                         mime_type=mime_type,
@@ -972,11 +984,12 @@ def batch_move_files():
         return jsonify({"success": False, "error": "No files selected"}), 400
 
     target_folder_id = None
+    dest_folder_obj = None
     if folder_id_raw and str(folder_id_raw).lower() not in ("root", "null", ""):
         try:
             target_folder_id = int(folder_id_raw)
-            f = Folder.query.get(target_folder_id)
-            if not f or (f.user_id != g.current_user.id and not g.current_user.is_admin):
+            dest_folder_obj = Folder.query.get(target_folder_id)
+            if not dest_folder_obj or (dest_folder_obj.user_id != g.current_user.id and not g.current_user.is_admin):
                 return jsonify({"success": False, "error": "Destination folder not found"}), 404
         except (ValueError, TypeError):
             target_folder_id = None
@@ -988,9 +1001,25 @@ def batch_move_files():
     if not is_admin:
         query = query.filter((FileItem.user_id == current_uid) | (FileItem.user_id.is_(None)))
 
+    # Resolve target Google Drive folder
+    target_drive_folder = None
+    if is_google_api_configured():
+        try:
+            if dest_folder_obj:
+                target_drive_folder = get_or_create_app_folder_in_drive(dest_folder_obj, user=g.current_user)
+            else:
+                target_drive_folder = get_or_create_user_drive_folder(g.current_user)
+        except Exception as drive_err:
+            print(f"[BATCH MOVE] Could not resolve drive folder: {drive_err}")
+
     updated_count = 0
     for f in query.all():
         f.folder_id = target_folder_id
+        if target_drive_folder and f.drive_file_id and f.source_type == "google_api_upload":
+            try:
+                move_drive_item(f.drive_file_id, target_drive_folder)
+            except Exception as move_err:
+                print(f"[BATCH MOVE] Error moving file '{f.filename}' in Drive: {move_err}")
         updated_count += 1
     db.session.commit()
 

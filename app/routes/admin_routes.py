@@ -256,3 +256,22 @@ def delete_notice(notice_id):
     db.session.delete(notice)
     db.session.commit()
     return jsonify({"success": True, "message": "Notice removed successfully"}), 200
+
+@admin_bp.route("/migrate-drive-hierarchy", methods=["POST"])
+@require_admin
+def trigger_drive_migration():
+    """Admin triggers full directory tree migration on Google Drive (Option 2)"""
+    try:
+        from migrate_drive_hierarchy import run_migration
+        stats = run_migration(verbose=False)
+        return jsonify({
+            "success": True,
+            "message": "Google Drive hierarchy migration completed!",
+            "stats": stats
+        }), 200
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"Migration failed: {str(e)}"
+        }), 500
+
