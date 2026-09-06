@@ -54,6 +54,35 @@
     color: #ffffff;
 }
 
+.btn-danger {
+    background: rgba(239, 68, 68, 0.12);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    padding: 8px 16px;
+    border-radius: var(--radius-md);
+    font-weight: 500;
+    font-size: 0.85rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all var(--transition-fast);
+    text-decoration: none;
+}
+
+.btn-danger:hover {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: #ef4444;
+    color: #ffffff;
+    box-shadow: 0 4px 14px rgba(239, 68, 68, 0.25);
+    transform: translateY(-1px);
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+}
+
 .btn-ghost {
     background: transparent;
     color: var(--text-muted);
@@ -919,6 +948,36 @@ input:focus,
     gap: 8px;
 }
 
+.preview-speed-select {
+    display: none;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background: rgba(15, 23, 42, 0.9) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 8px center;
+    padding: 4px 26px 4px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 6px;
+    color: #f1f5f9;
+    font-size: 0.78rem;
+    font-weight: 500;
+    height: 34px;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.preview-speed-select:focus {
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+}
+
+.preview-speed-select option {
+    background-color: #0f172a;
+    color: #f8fafc;
+    padding: 8px 12px;
+    font-size: 0.85rem;
+}
+
 .modal-backdrop .modal-body {
     flex: 1;
     min-height: 380px;
@@ -1086,6 +1145,272 @@ input:focus,
     border-radius: 4px;
     background: #ffffff;
     transition: width 0.15s ease, height 0.15s ease;
+}
+
+/* ==========================================================================
+   DEDICATED IN-BROWSER AUDIO PLAYER
+   ========================================================================== */
+.audio-player-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 24px;
+    width: 100%;
+    max-width: 520px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.audio-disc-visualizer {
+    width: 110px;
+    height: 110px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #1e293b 40%, #0f172a 70%, #020617 100%);
+    border: 3px solid rgba(56, 189, 248, 0.4);
+    box-shadow: 0 0 35px rgba(56, 189, 248, 0.25), inset 0 0 15px rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.8rem;
+    margin-bottom: 22px;
+    animation: vinylPulse 3s ease-in-out infinite alternate;
+}
+
+@keyframes vinylPulse {
+    0% { transform: scale(0.97); box-shadow: 0 0 20px rgba(56, 189, 248, 0.2); }
+    100% { transform: scale(1.03); box-shadow: 0 0 40px rgba(56, 189, 248, 0.45); }
+}
+
+.audio-track-details {
+    margin-bottom: 24px;
+}
+
+.audio-track-title {
+    color: #f8fafc;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+    max-width: 460px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.audio-track-meta {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+
+.stealth-audio-player {
+    width: 100%;
+    height: 54px !important;
+    min-height: 54px !important;
+    border-radius: 28px;
+    outline: none;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    background: #1e293b;
+}
+
+/* ==========================================================================
+   IN-BROWSER WORD DOCUMENT VIEWER (.docx)
+   ========================================================================== */
+.doc-viewer-wrapper {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 500px;
+    background: #090d16;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.doc-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 18px;
+    background: rgba(15, 23, 42, 0.95);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+}
+
+.doc-title-badge {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #38bdf8;
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    padding: 4px 10px;
+    border-radius: 6px;
+}
+
+.doc-body-scroll {
+    flex: 1;
+    width: 100%;
+    overflow: auto;
+    padding: 24px 16px;
+    background: #0f1422;
+    display: flex;
+    justify-content: center;
+}
+
+.docx-paper-view {
+    width: 100%;
+    max-width: 820px;
+    background: #ffffff;
+    color: #1e293b;
+    padding: 48px 56px;
+    border-radius: 6px;
+    box-shadow: 0 10px 35px rgba(0, 0, 0, 0.6);
+    font-family: 'Segoe UI', Calibri, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.65;
+    margin: 0 auto;
+}
+
+.docx-paper-view h1, .docx-paper-view h2, .docx-paper-view h3 {
+    color: #0f172a;
+    margin-top: 20px;
+    margin-bottom: 10px;
+}
+
+.docx-paper-view table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+}
+
+.docx-paper-view table, .docx-paper-view th, .docx-paper-view td {
+    border: 1px solid #cbd5e1;
+    padding: 8px 12px;
+}
+
+.docx-paper-view th {
+    background: #f1f5f9;
+}
+
+/* ==========================================================================
+   IN-BROWSER SPREADSHEET VIEWER (.xlsx, .xls)
+   ========================================================================== */
+.spreadsheet-viewer-wrapper {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 500px;
+    background: #090d16;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.spreadsheet-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 16px;
+    background: rgba(15, 23, 42, 0.95);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+.spreadsheet-sheet-tabs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    max-width: 60%;
+}
+
+.sheet-tab-btn {
+    background: rgba(255, 255, 255, 0.05);
+    color: #94a3b8;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+}
+
+.sheet-tab-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.sheet-tab-btn.active {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.4);
+    color: #34d399;
+}
+
+.spreadsheet-search-box {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    color: #fff;
+    padding: 5px 12px;
+    font-size: 0.78rem;
+    width: 170px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.spreadsheet-search-box:focus {
+    border-color: #34d399;
+}
+
+.spreadsheet-body {
+    flex: 1;
+    width: 100%;
+    overflow: auto;
+    padding: 16px;
+    background: #0f1422;
+}
+
+.spreadsheet-table-container {
+    width: 100%;
+    overflow: auto;
+}
+
+.spreadsheet-table-container table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    font-family: var(--font-mono);
+    color: #cbd5e1;
+    background: #0d121f;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.spreadsheet-table-container th, .spreadsheet-table-container td {
+    padding: 8px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    white-space: nowrap;
+}
+
+.spreadsheet-table-container tr:first-child, .spreadsheet-table-container th {
+    background: #1e293b;
+    color: #38bdf8;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+}
+
+.spreadsheet-table-container tr:nth-child(even) td {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.spreadsheet-table-container tr:hover td {
+    background: rgba(56, 189, 248, 0.08);
 }
 
 .preview-image {

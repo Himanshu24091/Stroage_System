@@ -16,9 +16,9 @@ bind = f"0.0.0.0:{port}"
 # requests are processed in parallel without blocking. This prevents the
 # site from becoming unresponsive during heavy uploads.
 # -----------------------------------------------------------------------
-worker_class = "gevent"
-workers = 2          # 2 gevent workers on Railway free tier (512MB RAM)
-worker_connections = 100  # max concurrent connections per worker (200 total)
+worker_class = "gthread"
+workers = 3           # 3 workers for concurrent multi-user handling
+threads = 8           # 8 threads per worker = 24 simultaneous concurrent streams & uploads
 
 # Railway/Cloudflare hard request timeout = ~300s. Set gunicorn slightly
 # higher so it doesn't kill a chunk before the proxy does.

@@ -130,21 +130,17 @@ class MediaPreviewController {
                     </video>
                 `;
             } else if (cat === "audio") {
-                this.previewContainer.innerHTML = `
-                    <div style="padding: 40px; text-align: center; width: 100%;">
-                        <div style="font-size: 3rem; margin-bottom: 20px;">🎵</div>
-                        <audio class="preview-media-player" controls autoplay style="width: 80%; max-width: 500px;">
-                            <source src="${streamUrl}" type="${file.mime_type || 'audio/mpeg'}">
-                            Your browser does not support HTML5 audio playback.
-                        </audio>
-                    </div>
-                `;
+                this.renderAudioViewer(file);
             } else if (cat === "image") {
                 this.previewContainer.innerHTML = `
                     <img src="${streamUrl}" alt="${file.filename}" class="preview-image" loading="lazy">
                 `;
             } else if (cat === "pdf" || ext === "pdf") {
                 this.renderPdfViewer(file);
+            } else if (ext === "docx" || ext === "doc") {
+                this.renderDocxViewer(file);
+            } else if (ext === "xlsx" || ext === "xls") {
+                this.renderXlsxViewer(file);
             } else if (cat === "archive" && (ext === "zip" || ext === "jar" || ext === "war" || ext === "apk")) {
                 this.renderArchiveViewer(file);
             } else if (cat === "code" || ext === "md" || (cat === "document" && (file.mime_type.includes("text") || ext === "txt" || ext === "csv"))) {
@@ -173,6 +169,198 @@ class MediaPreviewController {
                 this.renderFallback(file);
             }
         }, 80);
+    }
+
+    renderAudioViewer(file) {
+        const streamUrl = file.stream_url;
+        this.previewContainer.innerHTML = `
+            <div class="audio-player-wrapper">
+                <div class="audio-disc-visualizer">
+                    <span class="audio-vinyl-icon">🎵</span>
+                </div>
+                <div class="audio-track-details">
+                    <h4 class="audio-track-title">${this.escapeHtml(file.filename)}</h4>
+                    <span class="audio-track-meta">${file.formatted_size} • ${file.source_type === "google_api_upload" ? "Google Drive API" : (file.source_type === "gas_upload" ? "Drive Storage" : "Linked Drive File")}</span>
+                </div>
+                <audio id="stealthAudioElement" class="stealth-audio-player" controls autoplay preload="auto" src="${streamUrl}">
+                    Your browser does not support HTML5 audio playback.
+                </audio>
+            </div>
+        `;
+
+        const audio = document.getElementById("stealthAudioElement");
+        if (audio && this.speedSelect) {
+            audio.playbackRate = parseFloat(this.speedSelect.value) || 1.0;
+        }
+    }
+
+    renderDocxViewer(file) {
+        const streamUrl = file.stream_url;
+        this.previewContainer.innerHTML = `
+            <div class="doc-viewer-wrapper">
+                <div class="doc-toolbar">
+                    <span class="doc-title-badge">📄 Word Document (.${this.escapeHtml(file.filename.split('.').pop())})</span>
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" class="btn-secondary btn-sm" onclick="window.print()">🖨️ Print</button>
+                        <a href="${file.download_url}" class="btn-primary btn-sm">⬇️ Download</a>
+                    </div>
+                </div>
+                <div class="doc-body-scroll" id="docViewerBody">
+                    <div class="preview-spinner" id="docxSpinner" style="padding: 60px 0;">
+                        <div class="spinner-ring"></div>
+                        <span>Converting Word document for in-browser preview...</span>
+                    </div>
+                    <div id="docxContent" class="docx-paper-view" style="display:none;"></div>
+                </div>
+            </div>
+        `;
+
+        if (typeof mammoth === "undefined") {
+            this.renderFallback(file);
+            return;
+        }
+
+        fetch(streamUrl)
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.arrayBuffer();
+            })
+            .then(arrayBuffer => mammoth.convertToHtml({ arrayBuffer }))
+            .then(result => {
+                const container = document.getElementById("docxContent");
+                const spinner = document.getElementById("docxSpinner");
+                if (container) {
+                    container.innerHTML = result.value || "<p style='color:#64748b;'>Document has no readable text.</p>";
+                    container.style.display = "block";
+                }
+                if (spinner) spinner.style.display = "none";
+            })
+            .catch(err => {
+                console.error("Docx render error:", err);
+                const body = document.getElementById("docViewerBody");
+                if (body) {
+                    body.innerHTML = `
+                        <div class="empty-state" style="padding: 40px 20px;">
+                            <div style="font-size: 2.5rem; margin-bottom: 12px;">📄</div>
+                            <h4 style="color:#fff;">Could Not Render Word Document</h4>
+                            <p style="font-size:0.85rem; color:var(--text-muted); max-width:400px; margin: 8px auto 20px;">
+                                ${this.escapeHtml(err.message || 'Stream error')}
+                            </p>
+                            <a href="${file.download_url}" class="btn-primary">Download ${file.formatted_size}</a>
+                        </div>
+                    `;
+                }
+            });
+    }
+
+    renderXlsxViewer(file) {
+        const streamUrl = file.stream_url;
+        this.previewContainer.innerHTML = `
+            <div class="spreadsheet-viewer-wrapper">
+                <div class="spreadsheet-toolbar">
+                    <div class="spreadsheet-sheet-tabs" id="spreadsheetTabs"></div>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <input type="text" id="sheetSearchInput" class="spreadsheet-search-box" placeholder="Filter rows...">
+                        <a href="${file.download_url}" class="btn-primary btn-sm">⬇️ Download</a>
+                    </div>
+                </div>
+                <div class="spreadsheet-body" id="spreadsheetBody">
+                    <div class="preview-spinner" id="sheetSpinner" style="padding: 60px 0;">
+                        <div class="spinner-ring"></div>
+                        <span>Parsing spreadsheet sheets & tables...</span>
+                    </div>
+                    <div id="sheetTableContainer" class="spreadsheet-table-container" style="display:none;"></div>
+                </div>
+            </div>
+        `;
+
+        if (typeof XLSX === "undefined") {
+            this.renderFallback(file);
+            return;
+        }
+
+        fetch(streamUrl)
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.arrayBuffer();
+            })
+            .then(arrayBuffer => {
+                const workbook = XLSX.read(arrayBuffer, { type: "array" });
+                const tabsContainer = document.getElementById("spreadsheetTabs");
+                const tableContainer = document.getElementById("sheetTableContainer");
+                const spinner = document.getElementById("sheetSpinner");
+                const searchInput = document.getElementById("sheetSearchInput");
+
+                if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+                    throw new Error("No sheets found in workbook");
+                }
+
+                if (spinner) spinner.style.display = "none";
+                if (tableContainer) tableContainer.style.display = "block";
+
+                const renderSheet = (sheetName) => {
+                    const worksheet = workbook.Sheets[sheetName];
+                    if (!worksheet) return;
+
+                    const html = XLSX.utils.sheet_to_html(worksheet, { id: "activeExcelTable", editable: false });
+                    tableContainer.innerHTML = html;
+
+                    if (searchInput && searchInput.value.trim()) {
+                        filterRows(searchInput.value.trim().toLowerCase());
+                    }
+                };
+
+                const filterRows = (q) => {
+                    const table = document.getElementById("activeExcelTable");
+                    if (!table) return;
+                    const rows = table.querySelectorAll("tr");
+                    rows.forEach((r, idx) => {
+                        if (idx === 0) return;
+                        const txt = r.textContent.toLowerCase();
+                        r.style.display = txt.includes(q) ? "" : "none";
+                    });
+                };
+
+                if (searchInput) {
+                    searchInput.addEventListener("input", (e) => {
+                        filterRows(e.target.value.toLowerCase().trim());
+                    });
+                }
+
+                if (tabsContainer) {
+                    tabsContainer.innerHTML = workbook.SheetNames.map((name, idx) => `
+                        <button type="button" class="sheet-tab-btn ${idx === 0 ? 'active' : ''}" data-sheet="${this.escapeHtml(name)}">
+                            📊 ${this.escapeHtml(name)}
+                        </button>
+                    `).join("");
+
+                    tabsContainer.querySelectorAll(".sheet-tab-btn").forEach(btn => {
+                        btn.addEventListener("click", () => {
+                            tabsContainer.querySelectorAll(".sheet-tab-btn").forEach(b => b.classList.remove("active"));
+                            btn.classList.add("active");
+                            renderSheet(btn.getAttribute("data-sheet"));
+                        });
+                    });
+                }
+
+                renderSheet(workbook.SheetNames[0]);
+            })
+            .catch(err => {
+                console.error("XLSX render error:", err);
+                const body = document.getElementById("spreadsheetBody");
+                if (body) {
+                    body.innerHTML = `
+                        <div class="empty-state" style="padding: 40px 20px;">
+                            <div style="font-size: 2.5rem; margin-bottom: 12px;">📊</div>
+                            <h4 style="color:#fff;">Could Not Render Spreadsheet</h4>
+                            <p style="font-size:0.85rem; color:var(--text-muted); max-width:400px; margin: 8px auto 20px;">
+                                ${this.escapeHtml(err.message || 'Stream error')}
+                            </p>
+                            <a href="${file.download_url}" class="btn-primary">Download ${file.formatted_size}</a>
+                        </div>
+                    `;
+                }
+            });
     }
 
     renderPdfViewer(file) {

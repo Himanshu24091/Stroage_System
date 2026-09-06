@@ -1084,38 +1084,87 @@ def inspect_archive(file_id: int):
             "error": "Only standard ZIP/JAR/APK archives can be inspected in browser."
         }), 400
 
+    temp_path = None
+    needs_cleanup = False
+
     try:
-        resp = resolve_google_drive_stream(item.drive_file_id)
-        if not resp or resp.status_code not in (200, 206):
-            return jsonify({"success": False, "error": "Could not access file stream from Google Drive"}), 502
+        # Case 1: Local file on disk
+        if item.drive_url and os.path.exists(item.drive_url) and os.path.isfile(item.drive_url):
+            temp_path = item.drive_url
+            needs_cleanup = False
 
-        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tf:
+        # Case 2: Multi-Part Archive (GAS / Chunked Storage)
+        elif item.drive_file_id and item.drive_file_id.startswith("MULTIPART:"):
+            parts_json = item.drive_file_id.replace("MULTIPART:", "", 1)
+            parts = json.loads(parts_json)
+            parts = sorted(parts, key=lambda p: int(p.get("p") or p.get("part") or 0))
+
+            tf = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
             temp_path = tf.name
-            for chunk in resp.iter_content(chunk_size=128 * 1024):
-                if chunk:
-                    tf.write(chunk)
+            needs_cleanup = True
 
+            with open(temp_path, "wb") as f_out:
+                for part in parts:
+                    pid = part.get("id") or part.get("file_id")
+                    if pid:
+                        presp = resolve_google_drive_stream(pid)
+                        if presp and presp.status_code in (200, 206):
+                            for chunk in presp.iter_content(chunk_size=128 * 1024):
+                                if chunk:
+                                    f_out.write(chunk)
+                        else:
+                            raise Exception(f"Failed to fetch archive part {part.get('p') or 1} from storage")
+
+        # Case 3: Single Google Drive File ID
+        elif item.drive_file_id:
+            resp = resolve_google_drive_stream(item.drive_file_id)
+            if not resp or resp.status_code not in (200, 206):
+                return jsonify({"success": False, "error": "Could not access file stream from Google Drive"}), 502
+
+            tf = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+            temp_path = tf.name
+            needs_cleanup = True
+
+            with open(temp_path, "wb") as f_out:
+                for chunk in resp.iter_content(chunk_size=128 * 1024):
+                    if chunk:
+                        f_out.write(chunk)
+
+        # Case 4: Remote Direct URL
+        elif item.drive_url:
+            resp = requests.get(item.drive_url, stream=True, headers={"User-Agent": USER_AGENT}, timeout=60)
+            if resp.status_code not in (200, 206):
+                return jsonify({"success": False, "error": f"Upstream remote URL returned HTTP {resp.status_code}"}), 502
+
+            tf = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+            temp_path = tf.name
+            needs_cleanup = True
+
+            with open(temp_path, "wb") as f_out:
+                for chunk in resp.iter_content(chunk_size=128 * 1024):
+                    if chunk:
+                        f_out.write(chunk)
+        else:
+            return jsonify({"success": False, "error": "Archive file source is not accessible."}), 400
+
+        # Parse ZIP Structure
         archive_items = []
         total_uncompressed = 0
-        try:
-            with zipfile.ZipFile(temp_path, "r") as zf:
-                for zinfo in zf.infolist():
-                    dt = ""
-                    try:
-                        dt = datetime(*zinfo.date_time).strftime("%Y-%m-%d %H:%M")
-                    except Exception:
-                        pass
-                    total_uncompressed += zinfo.file_size
-                    archive_items.append({
-                        "filename": zinfo.filename,
-                        "size": zinfo.file_size,
-                        "compressed_size": zinfo.compress_size,
-                        "is_dir": zinfo.is_dir(),
-                        "date_time": dt
-                    })
-        finally:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+        with zipfile.ZipFile(temp_path, "r") as zf:
+            for zinfo in zf.infolist():
+                dt = ""
+                try:
+                    dt = datetime(*zinfo.date_time).strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    pass
+                total_uncompressed += zinfo.file_size
+                archive_items.append({
+                    "filename": zinfo.filename,
+                    "size": zinfo.file_size,
+                    "compressed_size": zinfo.compress_size,
+                    "is_dir": zinfo.is_dir(),
+                    "date_time": dt
+                })
 
         return jsonify({
             "success": True,
@@ -1124,10 +1173,17 @@ def inspect_archive(file_id: int):
             "total_uncompressed": total_uncompressed,
             "files": archive_items
         }), 200
+
     except zipfile.BadZipFile:
         return jsonify({"success": False, "error": "Archive file appears damaged or is not a valid ZIP."}), 400
     except Exception as e:
         return jsonify({"success": False, "error": f"Inspection failed: {str(e)}"}), 500
+    finally:
+        if needs_cleanup and temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
 
 @file_bp.route("/storage-stats", methods=["GET"])
 @require_login

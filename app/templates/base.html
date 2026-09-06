@@ -19,7 +19,7 @@
 
     <!-- Stylesheets -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3.9">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}?v=5.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}?v=5.1">
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -269,8 +269,10 @@
     <!-- Include Instructions Modal -->
     {% include "instructions_modal.html" %}
 
-    <!-- Local In-Browser PDF.js Engine (Zero Auto-Downloads) -->
+    <!-- Local In-Browser Document & Spreadsheet Engines -->
     <script src="{{ url_for('static', filename='vendor/pdfjs/pdf.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/docx/mammoth.browser.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/sheetjs/xlsx.full.min.js') }}"></script>
 
     {% block extra_js %}{% endblock %}
     {% block scripts %}{% endblock %}
