@@ -34,3 +34,23 @@ class Config:
     
     # Streaming Chunk Size (2 MB chunks for optimal network throughput and low RAM footprint)
     STREAM_CHUNK_SIZE = 2 * 1024 * 1024
+
+    # Official Google Drive API v3 Configuration (OAuth 2.0)
+    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+    GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+    GOOGLE_REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN", "")
+    GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "1idvdhTd1GI3RAs6MSoC8FXrCkmY8GOtA")
+
+    # If env vars are not set, attempt to auto-load from token.json
+    if not GOOGLE_REFRESH_TOKEN:
+        token_path = os.path.join(os.path.dirname(__file__), "token.json")
+        if os.path.exists(token_path):
+            try:
+                import json
+                with open(token_path, "r") as tf:
+                    tdata = json.load(tf)
+                    GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID or tdata.get("client_id", "")
+                    GOOGLE_CLIENT_SECRET = GOOGLE_CLIENT_SECRET or tdata.get("client_secret", "")
+                    GOOGLE_REFRESH_TOKEN = tdata.get("refresh_token", "")
+            except Exception:
+                pass

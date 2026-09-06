@@ -11,6 +11,12 @@ __pycache__/
 *.env
 .env.local
 .env.*.local
+service_account.json
+*service_account*.json
+*credentials*.json
+client_secret.json
+*client_secret*.json
+token.json
 
 # Virtual Environments
 venv/

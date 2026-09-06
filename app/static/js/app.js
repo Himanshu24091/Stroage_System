@@ -543,9 +543,8 @@ document.addEventListener("DOMContentLoaded", () => {
             return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
         }
 
-        // 4MB chunks — GAS base64-encodes payload so actual POST body is ~5.3MB,
-        // safely under GAS's ~50MB execution limit and well under Railway's timeout
-        const CHUNK_SIZE = 4 * 1024 * 1024;
+        // 8MB chunks for high-speed binary streaming with Google Drive API v3
+        const CHUNK_SIZE = 8 * 1024 * 1024;
         const totalSize = file.size;
         const totalChunks = Math.max(1, Math.ceil(totalSize / CHUNK_SIZE));
         const uploadId = "up_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
@@ -585,6 +584,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 formData.append("chunk_index", chunkIndex);
                 formData.append("total_chunks", totalChunks);
                 formData.append("total_size", totalSize);
+                formData.append("start_byte", start);
                 formData.append("filename", file.name);
                 formData.append("mime_type", file.type || "application/octet-stream");
 

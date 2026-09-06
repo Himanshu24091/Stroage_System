@@ -14,6 +14,7 @@ from app.utils.db_models import User, FileItem, SystemNotice, ChunkUploadPart
 from app.utils.auth_guard import require_login
 from app.utils.drive_streamer import extract_drive_id, create_stealth_stream_response, USER_AGENT, is_drive_folder_url, extract_drive_folder_id
 from app.utils.gas_bridge import upload_file_to_gas, upload_file_from_disk_to_gas, delete_file_from_gas, get_storage_stats_from_gas, is_gas_configured, get_folder_files_from_gas
+from app.utils.google_drive_api import is_google_api_configured, initiate_resumable_upload, upload_resumable_chunk, query_upload_status, delete_drive_file, get_storage_quota
 
 file_bp = Blueprint("file_bp", __name__)
 
@@ -100,7 +101,19 @@ def upload_file():
     file_bytes = uploaded_file.read()
     file_size = len(file_bytes)
 
-    if is_gas_configured():
+    if is_google_api_configured():
+        init_res = initiate_resumable_upload(filename, mime_type, file_size)
+        if not init_res.get("success"):
+            return jsonify({"success": False, "error": f"Google Drive API init error: {init_res.get('error')}"}), 502
+
+        up_res = upload_resumable_chunk(init_res.get("resumable_url"), file_bytes, 0, file_size)
+        if not up_res.get("success") or not up_res.get("completed"):
+            return jsonify({"success": False, "error": f"Google Drive API upload error: {up_res.get('error')}"}), 502
+
+        drive_file_id = up_res.get("file_id")
+        drive_url = ""
+        source_type = "google_api_upload"
+    elif is_gas_configured():
         gas_result = upload_file_to_gas(filename, file_bytes, mime_type)
         if not gas_result.get("success"):
             return jsonify({"success": False, "error": gas_result.get("error", "GAS upload failed")}), 500
@@ -201,7 +214,113 @@ def upload_chunk():
         target_user_id = first_user.id if first_user else 1
 
     try:
-        if is_gas_configured():
+        if is_google_api_configured():
+            # ---------------------------------------------------------------
+            # 1. OFFICIAL GOOGLE DRIVE API v3 (RESUMABLE BINARY STREAMING)
+            # ---------------------------------------------------------------
+            upload_lock = _get_upload_lock(upload_id)
+            with upload_lock:
+                session_part = ChunkUploadPart.query.filter_by(
+                    upload_id=upload_id,
+                    part_number=0
+                ).first()
+
+                if not session_part:
+                    init_res = initiate_resumable_upload(
+                        filename=filename,
+                        mime_type=mime_type,
+                        total_size=total_size,
+                        folder_id=Config.GOOGLE_DRIVE_FOLDER_ID
+                    )
+                    if not init_res.get("success"):
+                        return jsonify({
+                            "success": False,
+                            "error": f"Google Drive API init error: {init_res.get('error')}"
+                        }), 502
+
+                    resumable_url = init_res.get("resumable_url")
+                    session_part = ChunkUploadPart(
+                        upload_id=upload_id,
+                        user_id=target_user_id,
+                        part_number=0,
+                        total_parts=total_chunks,
+                        drive_file_id=resumable_url,
+                        part_size=0,
+                        filename=filename,
+                        mime_type=mime_type,
+                        total_size=total_size
+                    )
+                    db.session.add(session_part)
+                    db.session.commit()
+                else:
+                    resumable_url = session_part.drive_file_id
+
+            # Calculate raw start byte
+            start_byte = int(request.form.get("start_byte", chunk_index * chunk_size))
+            upload_result = upload_resumable_chunk(
+                resumable_url=resumable_url,
+                chunk_bytes=chunk_bytes,
+                start_byte=start_byte,
+                total_size=total_size
+            )
+
+            if not upload_result.get("success"):
+                return jsonify({
+                    "success": False,
+                    "error": f"Google Drive upload error: {upload_result.get('error')}"
+                }), 502
+
+            # Chunk accepted (upload in progress)
+            if not upload_result.get("completed") and chunk_index < total_chunks - 1:
+                return jsonify({
+                    "success": True,
+                    "status": "chunk_uploaded",
+                    "chunk_index": chunk_index,
+                    "total_chunks": total_chunks
+                }), 200
+
+            # Completed! File is natively saved as a single file in Google Drive
+            final_drive_id = upload_result.get("file_id")
+            if not final_drive_id:
+                status_res = query_upload_status(resumable_url, total_size)
+                final_drive_id = status_res.get("file_id")
+
+            if not final_drive_id:
+                return jsonify({
+                    "success": False,
+                    "error": "Google Drive upload completed but file ID was not returned"
+                }), 500
+
+            # Clean up temporary session records
+            try:
+                ChunkUploadPart.query.filter_by(upload_id=upload_id).delete()
+                db.session.commit()
+                _release_upload_lock(upload_id)
+            except Exception:
+                pass
+
+            category = FileItem.detect_category(filename, mime_type)
+            new_item = FileItem(
+                user_id=target_user_id,
+                filename=filename,
+                file_size=total_size or chunk_size,
+                mime_type=mime_type,
+                category=category,
+                drive_file_id=final_drive_id,
+                drive_url="",
+                source_type="google_api_upload"
+            )
+            db.session.add(new_item)
+            db.session.commit()
+
+            print(f"[GOOGLE DRIVE API] [OK] File uploaded natively: '{filename}' ({total_size} bytes, ID={final_drive_id})")
+            return jsonify({
+                "success": True,
+                "message": "File uploaded and processed successfully!",
+                "file": new_item.to_dict()
+            }), 201
+
+        elif is_gas_configured():
             # ---------------------------------------------------------------
             # IDEMPOTENT CHECK: Did this part already upload successfully?
             # ---------------------------------------------------------------
@@ -384,7 +503,7 @@ def upload_chunk():
             except Exception as clean_err:
                 print(f"[UPLOAD-CHUNK] Cleanup notice: {clean_err}")
 
-        print(f"[UPLOAD-CHUNK] ✅ Successfully saved: '{filename}' ({final_file_size} bytes, {total_chunks} parts) user_id={target_user_id}")
+        print(f"[UPLOAD-CHUNK] [OK] Successfully saved: '{filename}' ({final_file_size} bytes, {total_chunks} parts) user_id={target_user_id}")
         return jsonify({
             "success": True,
             "message": "File uploaded and processed successfully!",
@@ -590,7 +709,9 @@ def delete_file(file_id: int):
     if item.user_id != g.current_user.id and not g.current_user.is_admin:
         return jsonify({"success": False, "error": "Unauthorized to delete this file"}), 403
 
-    if item.source_type == "gas_upload" and item.drive_file_id:
+    if item.source_type == "google_api_upload" and item.drive_file_id:
+        delete_drive_file(item.drive_file_id)
+    elif item.source_type == "gas_upload" and item.drive_file_id:
         delete_file_from_gas(item.drive_file_id)
 
     db.session.delete(item)
@@ -608,14 +729,17 @@ def storage_stats():
     total_files = FileItem.query.filter_by(user_id=g.current_user.id).count()
     total_bytes = db.session.query(db.func.sum(FileItem.file_size)).filter(FileItem.user_id == g.current_user.id).scalar() or 0
 
-    gas_stats = get_storage_stats_from_gas()
+    if is_google_api_configured():
+        drive_metrics = get_storage_quota()
+    else:
+        drive_metrics = get_storage_stats_from_gas()
 
     return jsonify({
         "success": True,
         "total_files": total_files,
         "total_bytes": total_bytes,
         "total_formatted": f"{(total_bytes / (1024 * 1024)):.2f} MB" if total_bytes < 1024**3 else f"{(total_bytes / 1024**3):.2f} GB",
-        "drive_metrics": gas_stats
+        "drive_metrics": drive_metrics
     }), 200
 
 @file_bp.route("/notices", methods=["GET"])

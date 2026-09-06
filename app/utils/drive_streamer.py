@@ -61,9 +61,29 @@ def extract_drive_id(url_or_id: str) -> str:
 def resolve_google_drive_stream(file_id: str, range_header: str = None):
     """
     Establishes a high-speed streaming connection to Google Drive.
-    Uses Google's direct usercontent download endpoint and automatically bypasses
-    virus warning pages for large RAR/ZIP/Video archives (preventing 2,438 B HTML page downloads).
+    Uses direct Google Drive API v3 media stream when OAuth is configured,
+    and falls back to direct usercontent endpoints with automatic virus warning bypass.
     """
+    # Method 0: Direct Google Drive API v3 Media Stream (fastest, zero redirects)
+    from app.utils.google_drive_api import is_google_api_configured, get_access_token
+    if is_google_api_configured():
+        try:
+            token = get_access_token()
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "User-Agent": USER_AGENT
+            }
+            if range_header:
+                headers["Range"] = range_header
+            api_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media&supportsAllDrives=true"
+            api_resp = requests.get(api_url, stream=True, headers=headers, timeout=90)
+            if api_resp.status_code in (200, 206):
+                return api_resp
+            else:
+                print(f"[DRIVE STREAMER] API stream returned HTTP {api_resp.status_code}, falling back to web endpoint")
+        except Exception as api_err:
+            print(f"[DRIVE STREAMER] API stream notice: {api_err}, falling back to web endpoint")
+
     session = requests.Session()
     session.headers.update({"User-Agent": USER_AGENT})
 
