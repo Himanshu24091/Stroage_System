@@ -217,6 +217,7 @@
             const modal = document.getElementById("instructionsModal");
             if (modal) {
                 modal.classList.add("open");
+                modal.setAttribute("aria-hidden", "false");
             }
         };
 
@@ -224,6 +225,7 @@
             const modal = document.getElementById("instructionsModal");
             if (modal) {
                 modal.classList.remove("open");
+                modal.setAttribute("aria-hidden", "true");
                 try {
                     localStorage.setItem("stealthvault_guide_seen", "true");
                 } catch (e) {}
