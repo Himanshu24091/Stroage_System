@@ -258,6 +258,9 @@ document.addEventListener("DOMContentLoaded", () => {
         foldersSection.style.display = "block";
         if (foldersCountBadge) foldersCountBadge.textContent = folders.length;
 
+        // Clean up any previously teleported folder menus from body
+        document.querySelectorAll("body > [id^='folderMenu_']").forEach(el => el.remove());
+
         foldersGrid.innerHTML = folders.map(f => {
             const color = f.color || "blue";
             const isStarred = f.is_starred;
@@ -339,35 +342,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 const fid = btn.getAttribute("data-folder-menu");
                 const menu = document.getElementById(`folderMenu_${fid}`);
                 const parentCard = btn.closest(".folder-card");
+                const isAlreadyOpen = menu && !menu.classList.contains("hidden") && menu.style.display !== "none";
 
-                document.querySelectorAll(".dropdown-menu").forEach(m => {
-                    if (m !== menu) m.classList.add("hidden");
-                });
-                document.querySelectorAll(".file-card, .folder-card, tr").forEach(c => {
-                    if (c !== parentCard) c.classList.remove("menu-open");
-                });
+                hideAllDropdownMenus();
 
-                if (menu) {
-                    const isOpening = menu.classList.contains("hidden");
-                    menu.classList.toggle("hidden");
-                    if (parentCard) {
-                        parentCard.classList.toggle("menu-open", isOpening);
-                    }
-                    if (isOpening) {
-                        const btnRect = btn.getBoundingClientRect();
-                        const spaceBelow = window.innerHeight - btnRect.bottom;
-                        if (spaceBelow < 220 && btnRect.top > 220) {
-                            menu.style.top = "auto";
-                            menu.style.bottom = "100%";
-                            menu.style.marginTop = "0";
-                            menu.style.marginBottom = "4px";
-                        } else {
-                            menu.style.top = "100%";
-                            menu.style.bottom = "auto";
-                            menu.style.marginTop = "4px";
-                            menu.style.marginBottom = "0";
-                        }
-                    }
+                if (menu && !isAlreadyOpen) {
+                    if (parentCard) parentCard.classList.add("menu-open");
+                    positionDropdownMenu(menu, btn);
                 }
             });
         });
@@ -525,6 +506,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function renderGridView(files) {
+        // Clean up any previously teleported file menus from body
+        document.querySelectorAll("body > [id^='fileMenu_']").forEach(el => el.remove());
         fileListContainer.className = "files-grid-view";
         fileListContainer.innerHTML = files.map(file => {
             const isSelected = selectedFileIds.has(file.id);
@@ -584,6 +567,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function renderTableView(files) {
+        // Clean up any previously teleported file menus from body
+        document.querySelectorAll("body > [id^='fileMenu_']").forEach(el => el.remove());
         fileListContainer.className = "files-table-view";
         fileListContainer.innerHTML = `
             <table class="files-table">
@@ -701,35 +686,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 const fid = btn.getAttribute("data-menu-id");
                 const menu = document.getElementById(`fileMenu_${fid}`);
                 const parentCard = btn.closest(".file-card, tr");
+                const isAlreadyOpen = menu && !menu.classList.contains("hidden") && menu.style.display !== "none";
 
-                document.querySelectorAll(".dropdown-menu").forEach(m => {
-                    if (m !== menu) m.classList.add("hidden");
-                });
-                document.querySelectorAll(".file-card, .folder-card, tr").forEach(c => {
-                    if (c !== parentCard) c.classList.remove("menu-open");
-                });
+                hideAllDropdownMenus();
 
-                if (menu) {
-                    const isOpening = menu.classList.contains("hidden");
-                    menu.classList.toggle("hidden");
-                    if (parentCard) {
-                        parentCard.classList.toggle("menu-open", isOpening);
-                    }
-                    if (isOpening) {
-                        const btnRect = btn.getBoundingClientRect();
-                        const spaceBelow = window.innerHeight - btnRect.bottom;
-                        if (spaceBelow < 260 && btnRect.top > 260) {
-                            menu.style.top = "auto";
-                            menu.style.bottom = "100%";
-                            menu.style.marginTop = "0";
-                            menu.style.marginBottom = "4px";
-                        } else {
-                            menu.style.top = "100%";
-                            menu.style.bottom = "auto";
-                            menu.style.marginTop = "4px";
-                            menu.style.marginBottom = "0";
-                        }
-                    }
+                if (menu && !isAlreadyOpen) {
+                    if (parentCard) parentCard.classList.add("menu-open");
+                    positionDropdownMenu(menu, btn);
                 }
             });
         });
@@ -765,11 +728,66 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Close any open dropdown menu when clicking anywhere outside
-    document.addEventListener("click", () => {
-        document.querySelectorAll(".dropdown-menu").forEach(m => m.classList.add("hidden"));
+    // Floating dropdown positioning and outside-click handling
+    function positionDropdownMenu(menu, triggerBtn) {
+        if (!menu || !triggerBtn) return;
+        
+        if (menu.parentNode !== document.body) {
+            document.body.appendChild(menu);
+        }
+
+        menu.style.position = "fixed";
+        menu.style.zIndex = "999999";
+        menu.style.display = "block";
+        menu.classList.remove("hidden");
+
+        const btnRect = triggerBtn.getBoundingClientRect();
+        const menuWidth = Math.max(180, menu.offsetWidth || 180);
+        const menuHeight = Math.max(220, menu.offsetHeight || 240);
+
+        let left = btnRect.right - menuWidth;
+        if (left < 10) left = 10;
+        if (left + menuWidth > window.innerWidth - 10) {
+            left = window.innerWidth - menuWidth - 10;
+        }
+
+        const spaceBelow = window.innerHeight - btnRect.bottom;
+        const spaceAbove = btnRect.top;
+
+        if (spaceBelow < menuHeight + 10 && spaceAbove > spaceBelow) {
+            // Open upwards
+            let top = btnRect.top - menuHeight - 4;
+            if (top < 10) top = 10;
+            menu.style.top = `${top}px`;
+            menu.style.bottom = "auto";
+        } else {
+            // Open downwards
+            let top = btnRect.bottom + 4;
+            if (top + menuHeight > window.innerHeight - 10) {
+                top = Math.max(10, window.innerHeight - menuHeight - 10);
+            }
+            menu.style.top = `${top}px`;
+            menu.style.bottom = "auto";
+        }
+
+        menu.style.left = `${left}px`;
+        menu.style.right = "auto";
+        menu.style.marginTop = "0";
+        menu.style.marginBottom = "0";
+    }
+
+    function hideAllDropdownMenus() {
+        document.querySelectorAll(".dropdown-menu").forEach(m => {
+            m.classList.add("hidden");
+            m.style.display = "none";
+        });
         document.querySelectorAll(".file-card, .folder-card, tr").forEach(c => c.classList.remove("menu-open"));
-    });
+    }
+
+    // Close open dropdowns on click outside, page scroll, or window resize
+    document.addEventListener("click", hideAllDropdownMenus);
+    window.addEventListener("scroll", hideAllDropdownMenus, true);
+    window.addEventListener("resize", hideAllDropdownMenus, true);
 
     function updateCardSelectionStyles() {
         fileListContainer.querySelectorAll(".file-card, tr[data-id]").forEach(el => {

@@ -1090,10 +1090,10 @@ input:focus,
     border-radius: 4px;
     color: #f8fafc;
     text-align: center;
-    font-size: 0.82rem;
     font-weight: 600;
     outline: none;
     transition: border-color 0.2s;
+    appearance: textfield;
     -moz-appearance: textfield;
 }
 
@@ -1247,49 +1247,107 @@ input:focus,
     border-radius: 6px;
 }
 
+.doc-toolbar-actions,
+.spreadsheet-actions-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.doc-btn-download,
+.spreadsheet-btn-download {
+    height: 32px !important;
+    padding: 0 14px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    font-size: 0.8rem !important;
+    font-weight: 600 !important;
+    white-space: nowrap !important;
+    text-decoration: none !important;
+    line-height: 1 !important;
+    flex-shrink: 0 !important;
+}
+
 .doc-body-scroll {
     flex: 1;
     width: 100%;
     overflow: auto;
     padding: 24px 16px;
-    background: #0f1422;
-    display: flex;
-    justify-content: center;
+    background: #090d16;
+    display: block;
+    text-align: center;
 }
 
 .docx-paper-view {
-    width: 100%;
-    max-width: 820px;
-    background: #ffffff;
-    color: #1e293b;
-    padding: 48px 56px;
-    border-radius: 6px;
-    box-shadow: 0 10px 35px rgba(0, 0, 0, 0.6);
+    display: inline-block;
+    text-align: left;
+    width: fit-content;
+    max-width: 100%;
+    min-width: min(100%, 820px);
+    background: #ffffff !important;
+    color: #1e293b !important;
+    padding: 40px 48px;
+    border-radius: 8px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.65);
     font-family: 'Segoe UI', Calibri, Arial, sans-serif;
-    font-size: 15px;
-    line-height: 1.65;
+    font-size: 14px;
+    line-height: 1.6;
     margin: 0 auto;
+    box-sizing: border-box;
 }
 
-.docx-paper-view h1, .docx-paper-view h2, .docx-paper-view h3 {
-    color: #0f172a;
-    margin-top: 20px;
-    margin-bottom: 10px;
+.docx-paper-view * {
+    color: #1e293b !important;
 }
 
+.docx-paper-view h1, .docx-paper-view h2, .docx-paper-view h3, .docx-paper-view h4 {
+    color: #0f172a !important;
+    margin-top: 18px;
+    margin-bottom: 8px;
+    font-weight: 700;
+}
+
+.docx-table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    margin: 16px 0;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #ffffff !important;
+}
+
+.docx-table-wrapper table,
 .docx-paper-view table {
     width: 100%;
+    min-width: 600px;
     border-collapse: collapse;
-    margin: 16px 0;
+    background: #ffffff !important;
+    color: #1e293b !important;
+    margin: 0;
 }
 
-.docx-paper-view table, .docx-paper-view th, .docx-paper-view td {
-    border: 1px solid #cbd5e1;
+.docx-table-wrapper th,
+.docx-table-wrapper td,
+.docx-paper-view table th,
+.docx-paper-view table td {
+    border: 1px solid #cbd5e1 !important;
     padding: 8px 12px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: #1e293b !important;
+    background: #ffffff !important;
+    vertical-align: top;
 }
 
-.docx-paper-view th {
-    background: #f1f5f9;
+.docx-table-wrapper th,
+.docx-paper-view table th {
+    background: #f1f5f9 !important;
+    color: #0f172a !important;
+    font-weight: 600;
 }
 
 /* ==========================================================================
@@ -1316,7 +1374,7 @@ input:focus,
     background: rgba(15, 23, 42, 0.95);
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     flex-shrink: 0;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
 }
 
 .spreadsheet-sheet-tabs {
@@ -1419,17 +1477,115 @@ input:focus,
     object-fit: contain;
 }
 
-.preview-code-block {
+/* ==========================================================================
+   IN-BROWSER CODE & TEXT PREVIEW
+   ========================================================================== */
+.code-preview-wrapper {
+    display: flex;
+    flex-direction: column;
     width: 100%;
-    height: 60vh;
-    padding: 20px;
-    background: #0d1117;
-    color: #c9d1d9;
-    font-family: var(--font-mono);
+    height: 100%;
+    min-height: 500px;
+    background: #090d16;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.code-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 18px;
+    background: rgba(15, 23, 42, 0.95);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+    gap: 12px;
+}
+
+.code-preview-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.code-icon {
+    font-size: 1rem;
+}
+
+.code-filename {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #f1f5f9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.code-meta-badge {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 2px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.btn-copy-code {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #e2e8f0;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.btn-copy-code:hover {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: rgba(56, 189, 248, 0.5);
+    color: #38bdf8;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(56, 189, 248, 0.2);
+}
+
+.btn-copy-code:active {
+    transform: translateY(0);
+}
+
+.preview-code-container {
+    flex: 1;
+    overflow: auto;
+    padding: 16px 20px;
+    background: #060911;
+}
+
+.preview-code-block {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    color: #cbd5e1;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
     font-size: 0.85rem;
     line-height: 1.6;
-    overflow: auto;
-    white-space: pre;
+    tab-size: 4;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.preview-code-block code {
+    font-family: inherit;
+    color: inherit;
+    background: transparent;
 }
 
 .preview-spinner {

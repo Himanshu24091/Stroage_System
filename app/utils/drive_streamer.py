@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import urllib.parse
 import mimetypes
 import requests
 from flask import Response, stream_with_context
@@ -73,6 +74,21 @@ def resolve_mime_type(filename: str = "", mime_type: str = "", upstream_content_
         return guessed
         
     return "application/octet-stream"
+
+def make_content_disposition(filename: str, as_attachment: bool = False) -> str:
+    """
+    Creates an RFC 6266 & RFC 5987 compliant Content-Disposition header.
+    Guarantees 100% latin-1 / ASCII compliance for WSGI/Gunicorn servers
+    while properly delivering full Unicode filenames (e.g., Hindi, Japanese, Emojis)
+    to modern web browsers via filename*=UTF-8''<encoded>.
+    """
+    disposition_type = "attachment" if as_attachment else "inline"
+    safe_name = (filename or "file").replace('\r', '').replace('\n', '')
+    # Strip non-ASCII characters for standard ASCII fallback
+    ascii_fallback = re.sub(r'[^\x20-\x7E]', '_', safe_name).replace('"', '').strip() or "file"
+    # Standard RFC 5987 percent-encoded UTF-8 filename
+    encoded_utf8 = urllib.parse.quote(safe_name, encoding='utf-8')
+    return f"{disposition_type}; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded_utf8}"
 
 def is_drive_folder_url(url: str) -> bool:
     """Checks if a Google Drive link points to a folder"""
@@ -237,7 +253,7 @@ def create_stealth_stream_response(file_id: str, direct_url: str, filename: str,
         effective_mime = resolve_mime_type(filename, mime_type)
         resp_headers = {
             "Content-Type": effective_mime,
-            "Content-Disposition": f'{disposition_type}; filename="{safe_filename}"',
+            "Content-Disposition": make_content_disposition(filename, as_attachment),
             "Accept-Ranges": "bytes",
             "Content-Length": str(content_length),
             "Cache-Control": "public, max-age=3600",
@@ -317,7 +333,7 @@ def create_stealth_stream_response(file_id: str, direct_url: str, filename: str,
             effective_mime = resolve_mime_type(filename, mime_type)
             resp_headers = {
                 "Content-Type": effective_mime,
-                "Content-Disposition": f'{disposition_type}; filename="{safe_filename}"',
+                "Content-Disposition": make_content_disposition(filename, as_attachment),
                 "Accept-Ranges": "bytes",
                 "Content-Length": str(content_length),
                 "Cache-Control": "public, max-age=3600",
@@ -358,7 +374,7 @@ def create_stealth_stream_response(file_id: str, direct_url: str, filename: str,
 
     resp_headers = {
         "Content-Type": effective_mime,
-        "Content-Disposition": f'{disposition_type}; filename="{safe_filename}"',
+        "Content-Disposition": make_content_disposition(filename, as_attachment),
         "Accept-Ranges": "bytes",
         "Cache-Control": "public, max-age=3600",
         "X-Content-Type-Options": "nosniff"

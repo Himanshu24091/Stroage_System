@@ -721,14 +721,20 @@ def stream_file(file_id: int):
         except Exception:
             db.session.rollback()
 
-    return create_stealth_stream_response(
-        file_id=item.drive_file_id,
-        direct_url=item.drive_url,
-        filename=item.filename,
-        mime_type=effective_mime,
-        range_header=range_header,
-        as_attachment=False
-    )
+    try:
+        return create_stealth_stream_response(
+            file_id=item.drive_file_id,
+            direct_url=item.drive_url,
+            filename=item.filename,
+            mime_type=effective_mime,
+            range_header=range_header,
+            as_attachment=False
+        )
+    except Exception as stream_err:
+        import traceback
+        print(f"[STREAM ERROR] File ID {file_id} ({item.filename}): {stream_err}")
+        traceback.print_exc()
+        return jsonify({"success": False, "error": f"Failed to stream file: {str(stream_err)}"}), 500
 
 @file_bp.route("/download/<int:file_id>", methods=["GET"])
 @require_login

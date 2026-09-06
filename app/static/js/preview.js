@@ -151,13 +151,20 @@ class MediaPreviewController {
                             this.renderMarkdown(text);
                         } else {
                             const safeText = this.escapeHtml(text);
+                            window.__lastCodePreviewText = text;
                             this.previewContainer.innerHTML = `
                                 <div class="code-preview-wrapper">
                                     <div class="code-preview-header">
-                                        <span>${file.filename}</span>
-                                        <button class="btn-copy-code" onclick="navigator.clipboard.writeText(\`${encodeURIComponent(text)}\`).then(()=>window.showToast('Copied!','success'))">Copy Text</button>
+                                        <div class="code-preview-title">
+                                            <span class="code-icon">💻</span>
+                                            <span class="code-filename">${this.escapeHtml(file.filename)}</span>
+                                            <span class="code-meta-badge">${file.formatted_size}</span>
+                                        </div>
+                                        <button class="btn-copy-code" type="button" onclick="navigator.clipboard.writeText(window.__lastCodePreviewText).then(()=>{ this.textContent='✓ Copied!'; setTimeout(()=>{ this.innerHTML='📋 Copy Code'; }, 2000); if(window.showToast) window.showToast('Copied to clipboard!','success'); })">📋 Copy Code</button>
                                     </div>
-                                    <pre class="preview-code-block"><code>${safeText}</code></pre>
+                                    <div class="preview-code-container">
+                                        <pre class="preview-code-block"><code>${safeText}</code></pre>
+                                    </div>
                                 </div>
                             `;
                         }
@@ -200,9 +207,9 @@ class MediaPreviewController {
             <div class="doc-viewer-wrapper">
                 <div class="doc-toolbar">
                     <span class="doc-title-badge">📄 Word Document (.${this.escapeHtml(file.filename.split('.').pop())})</span>
-                    <div style="display:flex; gap:8px;">
+                    <div class="doc-toolbar-actions">
                         <button type="button" class="btn-secondary btn-sm" onclick="window.print()">🖨️ Print</button>
-                        <a href="${file.download_url}" class="btn-primary btn-sm">⬇️ Download</a>
+                        <a href="${file.download_url}" class="btn-primary btn-sm doc-btn-download">⬇️ Download</a>
                     </div>
                 </div>
                 <div class="doc-body-scroll" id="docViewerBody">
@@ -231,6 +238,15 @@ class MediaPreviewController {
                 const spinner = document.getElementById("docxSpinner");
                 if (container) {
                     container.innerHTML = result.value || "<p style='color:#64748b;'>Document has no readable text.</p>";
+                    // Wrap all tables so wide tables can scroll cleanly inside the white paper view
+                    container.querySelectorAll("table").forEach(tbl => {
+                        if (!tbl.parentElement.classList.contains("docx-table-wrapper")) {
+                            const wrapper = document.createElement("div");
+                            wrapper.className = "docx-table-wrapper";
+                            tbl.parentNode.insertBefore(wrapper, tbl);
+                            wrapper.appendChild(tbl);
+                        }
+                    });
                     container.style.display = "block";
                 }
                 if (spinner) spinner.style.display = "none";
@@ -259,9 +275,9 @@ class MediaPreviewController {
             <div class="spreadsheet-viewer-wrapper">
                 <div class="spreadsheet-toolbar">
                     <div class="spreadsheet-sheet-tabs" id="spreadsheetTabs"></div>
-                    <div style="display:flex; gap:8px; align-items:center;">
+                    <div class="spreadsheet-actions-group">
                         <input type="text" id="sheetSearchInput" class="spreadsheet-search-box" placeholder="Filter rows...">
-                        <a href="${file.download_url}" class="btn-primary btn-sm">⬇️ Download</a>
+                        <a href="${file.download_url}" class="btn-primary btn-sm spreadsheet-btn-download">⬇️ Download</a>
                     </div>
                 </div>
                 <div class="spreadsheet-body" id="spreadsheetBody">
