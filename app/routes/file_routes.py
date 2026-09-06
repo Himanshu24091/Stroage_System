@@ -14,7 +14,7 @@ from config import Config
 from app import db
 from app.utils.db_models import User, Folder, FileItem, SystemNotice, ChunkUploadPart
 from app.utils.auth_guard import require_login
-from app.utils.drive_streamer import extract_drive_id, create_stealth_stream_response, USER_AGENT, is_drive_folder_url, extract_drive_folder_id, resolve_google_drive_stream
+from app.utils.drive_streamer import extract_drive_id, create_stealth_stream_response, USER_AGENT, is_drive_folder_url, extract_drive_folder_id, resolve_google_drive_stream, resolve_mime_type
 from app.utils.gas_bridge import upload_file_to_gas, upload_file_from_disk_to_gas, delete_file_from_gas, get_storage_stats_from_gas, is_gas_configured, get_folder_files_from_gas
 from app.utils.google_drive_api import is_google_api_configured, initiate_resumable_upload, upload_resumable_chunk, query_upload_status, delete_drive_file, get_storage_quota
 
@@ -517,13 +517,14 @@ def upload_chunk():
             final_file_size = os.path.getsize(local_path)
 
         # Create FileItem record in DB (drive_file_id is TEXT, holds unlimited length)
-        category = FileItem.detect_category(filename, mime_type)
+        effective_mime = resolve_mime_type(filename, mime_type)
+        category = FileItem.detect_category(filename, effective_mime)
         new_item = FileItem(
             user_id=target_user_id,
             folder_id=target_folder_id,
             filename=filename,
             file_size=final_file_size,
-            mime_type=mime_type,
+            mime_type=effective_mime,
             category=category,
             drive_file_id=drive_file_id,
             drive_url=drive_url,
@@ -675,13 +676,14 @@ def import_link():
     if not filename:
         filename = f"drive_file_{drive_id[:8]}"
 
-    category = FileItem.detect_category(filename, mime_type)
+    effective_mime = resolve_mime_type(filename, mime_type)
+    category = FileItem.detect_category(filename, effective_mime)
 
     new_item = FileItem(
         user_id=g.current_user.id,
         filename=filename,
         file_size=file_size,
-        mime_type=mime_type,
+        mime_type=effective_mime,
         category=category,
         drive_file_id=drive_id,
         drive_url=raw_url,
@@ -709,11 +711,21 @@ def stream_file(file_id: int):
 
     range_header = request.headers.get("Range", None)
 
+    # Heal MIME type on the fly if stored as generic octet-stream
+    effective_mime = resolve_mime_type(item.filename, item.mime_type)
+    if effective_mime != item.mime_type:
+        item.mime_type = effective_mime
+        item.category = FileItem.detect_category(item.filename, effective_mime)
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
     return create_stealth_stream_response(
         file_id=item.drive_file_id,
         direct_url=item.drive_url,
         filename=item.filename,
-        mime_type=item.mime_type,
+        mime_type=effective_mime,
         range_header=range_header,
         as_attachment=False
     )

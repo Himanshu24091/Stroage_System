@@ -105,6 +105,11 @@ class MediaPreviewController {
         if (this.speedSelect) {
             this.speedSelect.style.display = "none";
         }
+
+        if (this._pdfKeyHandler) {
+            document.removeEventListener("keydown", this._pdfKeyHandler);
+            this._pdfKeyHandler = null;
+        }
         
         // Stop any running audio/video
         this.previewContainer.innerHTML = "";
@@ -138,10 +143,8 @@ class MediaPreviewController {
                 this.previewContainer.innerHTML = `
                     <img src="${streamUrl}" alt="${file.filename}" class="preview-image" loading="lazy">
                 `;
-            } else if (cat === "pdf") {
-                this.previewContainer.innerHTML = `
-                    <iframe src="${streamUrl}#toolbar=1" class="preview-pdf-frame" title="PDF Preview"></iframe>
-                `;
+            } else if (cat === "pdf" || ext === "pdf") {
+                this.renderPdfViewer(file);
             } else if (cat === "archive" && (ext === "zip" || ext === "jar" || ext === "war" || ext === "apk")) {
                 this.renderArchiveViewer(file);
             } else if (cat === "code" || ext === "md" || (cat === "document" && (file.mime_type.includes("text") || ext === "txt" || ext === "csv"))) {
@@ -170,6 +173,284 @@ class MediaPreviewController {
                 this.renderFallback(file);
             }
         }, 80);
+    }
+
+    renderPdfViewer(file) {
+        const streamUrl = file.stream_url;
+
+        // Fallback to object/iframe if PDF.js is unavailable
+        if (!window.pdfjsLib) {
+            this.previewContainer.innerHTML = `
+                <object data="${streamUrl}#toolbar=1" type="application/pdf" class="preview-pdf-frame">
+                    <iframe src="${streamUrl}#toolbar=1" class="preview-pdf-frame" title="PDF Preview"></iframe>
+                </object>
+            `;
+            return;
+        }
+
+        // Configure PDF.js worker from local static assets
+        try {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = "/static/vendor/pdfjs/pdf.worker.min.js";
+        } catch (e) {}
+
+        this.previewContainer.innerHTML = `
+            <div class="pdf-viewer-wrapper" id="pdfViewerWrapper">
+                <div class="pdf-toolbar">
+                    <div class="pdf-toolbar-group">
+                        <button type="button" class="pdf-btn" id="pdfPrevPage" title="Previous Page (Left Arrow)">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                        </button>
+                        <div class="pdf-page-indicator">
+                            <span>Page</span>
+                            <input type="number" id="pdfPageInput" min="1" value="1" class="pdf-page-input">
+                            <span class="pdf-page-separator">/</span>
+                            <span id="pdfTotalPages">--</span>
+                        </div>
+                        <button type="button" class="pdf-btn" id="pdfNextPage" title="Next Page (Right Arrow)">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                        </button>
+                    </div>
+
+                    <div class="pdf-toolbar-group">
+                        <button type="button" class="pdf-btn" id="pdfZoomOut" title="Zoom Out (-)">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+                        </button>
+                        <span id="pdfZoomLabel" class="pdf-zoom-label">100%</span>
+                        <button type="button" class="pdf-btn" id="pdfZoomIn" title="Zoom In (+)">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+                        </button>
+                        <button type="button" class="pdf-btn pdf-btn-pill" id="pdfFitWidth" title="Fit to Container Width">
+                            Fit Width
+                        </button>
+                    </div>
+
+                    <div class="pdf-toolbar-group">
+                        <a href="${streamUrl}" target="_blank" rel="noopener noreferrer" class="pdf-btn pdf-btn-pill" title="Open in browser native viewer (new tab)">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                            <span>Native Tab</span>
+                        </a>
+                    </div>
+                </div>
+
+                <div class="pdf-canvas-viewport" id="pdfCanvasViewport">
+                    <div class="preview-spinner" id="pdfLoadingSpinner" style="padding: 60px 0;">
+                        <div class="spinner-ring"></div>
+                        <span style="margin-top:12px; color:var(--text-muted); font-size:0.9rem;">Rendering PDF document...</span>
+                    </div>
+                    <div id="pdfCanvasContainer" class="pdf-canvas-container" style="display:none;">
+                        <canvas id="pdfCanvas" class="pdf-canvas"></canvas>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const wrapper = document.getElementById("pdfViewerWrapper");
+        const viewport = document.getElementById("pdfCanvasViewport");
+        const canvasContainer = document.getElementById("pdfCanvasContainer");
+        const canvas = document.getElementById("pdfCanvas");
+        const ctx = canvas.getContext("2d");
+        const spinner = document.getElementById("pdfLoadingSpinner");
+        const prevBtn = document.getElementById("pdfPrevPage");
+        const nextBtn = document.getElementById("pdfNextPage");
+        const pageInput = document.getElementById("pdfPageInput");
+        const totalPagesEl = document.getElementById("pdfTotalPages");
+        const zoomInBtn = document.getElementById("pdfZoomIn");
+        const zoomOutBtn = document.getElementById("pdfZoomOut");
+        const zoomLabel = document.getElementById("pdfZoomLabel");
+        const fitWidthBtn = document.getElementById("pdfFitWidth");
+
+        let pdfDoc = null;
+        let currentPageNum = 1;
+        let currentScale = 1.25;
+        let isRendering = false;
+        let pendingPageNum = null;
+
+        const renderPage = (num) => {
+            if (!pdfDoc) return;
+            isRendering = true;
+
+            pdfDoc.getPage(num).then((page) => {
+                const pixelRatio = window.devicePixelRatio || 1;
+                const scaledViewport = page.getViewport({ scale: currentScale });
+
+                canvas.height = Math.floor(scaledViewport.height * pixelRatio);
+                canvas.width = Math.floor(scaledViewport.width * pixelRatio);
+                canvas.style.height = `${Math.floor(scaledViewport.height)}px`;
+                canvas.style.width = `${Math.floor(scaledViewport.width)}px`;
+
+                const transform = pixelRatio !== 1 ? [pixelRatio, 0, 0, pixelRatio, 0, 0] : null;
+
+                const renderContext = {
+                    canvasContext: ctx,
+                    viewport: scaledViewport,
+                    transform: transform
+                };
+
+                const renderTask = page.render(renderContext);
+                renderTask.promise.then(() => {
+                    isRendering = false;
+                    if (pendingPageNum !== null) {
+                        const nextNum = pendingPageNum;
+                        pendingPageNum = null;
+                        renderPage(nextNum);
+                    }
+                });
+
+                // Update UI state
+                currentPageNum = num;
+                if (pageInput) pageInput.value = num;
+                if (prevBtn) prevBtn.disabled = num <= 1;
+                if (nextBtn) nextBtn.disabled = num >= pdfDoc.numPages;
+                if (zoomLabel) zoomLabel.textContent = `${Math.round(currentScale * 100)}%`;
+            }).catch((err) => {
+                isRendering = false;
+                console.error("PDF page render error:", err);
+            });
+        };
+
+        const queueRenderPage = (num) => {
+            if (isRendering) {
+                pendingPageNum = num;
+            } else {
+                renderPage(num);
+            }
+        };
+
+        // Fetch & Load Document
+        const loadingTask = window.pdfjsLib.getDocument({
+            url: streamUrl,
+            withCredentials: true
+        });
+
+        loadingTask.promise.then((doc) => {
+            pdfDoc = doc;
+            if (totalPagesEl) totalPagesEl.textContent = doc.numPages;
+            if (pageInput) pageInput.max = doc.numPages;
+
+            if (spinner) spinner.style.display = "none";
+            if (canvasContainer) canvasContainer.style.display = "flex";
+
+            // Calculate fit-width initial scale if viewport width is available
+            if (viewport && viewport.clientWidth > 100) {
+                doc.getPage(1).then((firstPage) => {
+                    const vp = firstPage.getViewport({ scale: 1.0 });
+                    const targetWidth = Math.min(viewport.clientWidth - 48, 850);
+                    if (vp.width > 0 && targetWidth > 200) {
+                        currentScale = Math.max(0.6, Math.min(2.0, targetWidth / vp.width));
+                    }
+                    renderPage(1);
+                });
+            } else {
+                renderPage(1);
+            }
+        }).catch((err) => {
+            console.error("PDF.js loading error:", err);
+            if (wrapper) {
+                wrapper.innerHTML = `
+                    <div class="empty-state" style="padding: 40px 20px;">
+                        <div style="font-size: 2.8rem; margin-bottom: 12px;">📑</div>
+                        <h4 style="color: #fff; margin-bottom: 8px;">PDF Direct Stream Notice</h4>
+                        <p style="font-size: 0.88rem; color: var(--text-muted); max-width: 440px; margin: 0 auto 20px; line-height: 1.5;">
+                            ${this.escapeHtml(file.filename)}<br>
+                            <span style="font-size:0.8rem; opacity:0.8;">The file stream encountered an upstream response. You can view it in the native browser tab or download it directly.</span>
+                        </p>
+                        <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                            <a href="${streamUrl}" target="_blank" class="btn-secondary" style="padding:8px 18px;">
+                                🌐 Open in Native Tab
+                            </a>
+                            <a href="${file.download_url}" class="btn-primary" style="padding:8px 18px;">
+                                ⬇️ Direct Download (${file.formatted_size})
+                            </a>
+                        </div>
+                    </div>
+                `;
+            }
+        });
+
+        // Event Listeners for Toolbar
+        if (prevBtn) {
+            prevBtn.addEventListener("click", () => {
+                if (currentPageNum > 1) queueRenderPage(currentPageNum - 1);
+            });
+        }
+
+        if (nextBtn) {
+            nextBtn.addEventListener("click", () => {
+                if (pdfDoc && currentPageNum < pdfDoc.numPages) queueRenderPage(currentPageNum + 1);
+            });
+        }
+
+        if (pageInput) {
+            pageInput.addEventListener("change", (e) => {
+                const target = parseInt(e.target.value, 10);
+                if (pdfDoc && target >= 1 && target <= pdfDoc.numPages) {
+                    queueRenderPage(target);
+                } else {
+                    e.target.value = currentPageNum;
+                }
+            });
+            pageInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    pageInput.blur();
+                }
+            });
+        }
+
+        if (zoomInBtn) {
+            zoomInBtn.addEventListener("click", () => {
+                if (currentScale < 3.0) {
+                    currentScale = Math.min(3.0, currentScale + 0.25);
+                    queueRenderPage(currentPageNum);
+                }
+            });
+        }
+
+        if (zoomOutBtn) {
+            zoomOutBtn.addEventListener("click", () => {
+                if (currentScale > 0.5) {
+                    currentScale = Math.max(0.5, currentScale - 0.25);
+                    queueRenderPage(currentPageNum);
+                }
+            });
+        }
+
+        if (fitWidthBtn) {
+            fitWidthBtn.addEventListener("click", () => {
+                if (pdfDoc && viewport) {
+                    pdfDoc.getPage(currentPageNum).then((p) => {
+                        const vp = p.getViewport({ scale: 1.0 });
+                        const targetWidth = viewport.clientWidth - 48;
+                        if (vp.width > 0 && targetWidth > 200) {
+                            currentScale = Math.max(0.5, Math.min(3.0, targetWidth / vp.width));
+                            queueRenderPage(currentPageNum);
+                        }
+                    });
+                }
+            });
+        }
+
+        // Keyboard arrow navigation while modal is active
+        if (this._pdfKeyHandler) {
+            document.removeEventListener("keydown", this._pdfKeyHandler);
+        }
+        this._pdfKeyHandler = (e) => {
+            if (!this.modal || !this.modal.classList.contains("open")) return;
+            if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+
+            if (e.key === "ArrowLeft" || e.key === "PageUp") {
+                if (currentPageNum > 1) {
+                    e.preventDefault();
+                    queueRenderPage(currentPageNum - 1);
+                }
+            } else if (e.key === "ArrowRight" || e.key === "PageDown") {
+                if (pdfDoc && currentPageNum < pdfDoc.numPages) {
+                    e.preventDefault();
+                    queueRenderPage(currentPageNum + 1);
+                }
+            }
+        };
+        document.addEventListener("keydown", this._pdfKeyHandler);
     }
 
     renderArchiveViewer(file) {

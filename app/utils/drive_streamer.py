@@ -1,12 +1,78 @@
 import os
 import re
 import json
+import mimetypes
 import requests
 from flask import Response, stream_with_context
 from config import Config
 
 # Standard User-Agent for Google Drive stream requests
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+# Precise extension map for media streaming & previewing
+EXTENSION_MIME_MAP = {
+    ".pdf": "application/pdf",
+    ".mp4": "video/mp4",
+    ".m4v": "video/mp4",
+    ".webm": "video/webm",
+    ".mkv": "video/webm",
+    ".mov": "video/quicktime",
+    ".avi": "video/x-msvideo",
+    ".wmv": "video/x-ms-wmv",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".flac": "audio/flac",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".bmp": "image/bmp",
+    ".ico": "image/x-icon",
+    ".txt": "text/plain; charset=utf-8",
+    ".csv": "text/csv; charset=utf-8",
+    ".json": "application/json",
+    ".md": "text/markdown; charset=utf-8",
+    ".html": "text/html; charset=utf-8",
+    ".htm": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript",
+    ".zip": "application/zip",
+    ".rar": "application/x-rar-compressed",
+    ".7z": "application/x-7z-compressed",
+    ".tar": "application/x-tar",
+    ".gz": "application/gzip",
+}
+
+def resolve_mime_type(filename: str = "", mime_type: str = "", upstream_content_type: str = None) -> str:
+    """
+    Guarantees the exact, correct MIME type for in-browser streaming and previews.
+    Prevents browsers from falling back to auto-download on application/octet-stream.
+    """
+    ext = os.path.splitext(filename)[1].lower() if filename else ""
+    
+    # 1. Direct extension matching takes top priority for streaming media & documents
+    if ext in EXTENSION_MIME_MAP:
+        return EXTENSION_MIME_MAP[ext]
+        
+    # 2. Existing valid MIME type (excluding generic binary streams)
+    if mime_type and mime_type.strip().lower() not in ("application/octet-stream", "binary/octet-stream", "application/download", "application/unknown"):
+        return mime_type.strip()
+        
+    # 3. Upstream header content-type if valid
+    if upstream_content_type and upstream_content_type.strip().lower() not in ("application/octet-stream", "binary/octet-stream", "text/html", "text/plain"):
+        return upstream_content_type.split(";")[0].strip()
+        
+    # 4. Standard library guess_type
+    guessed, _ = mimetypes.guess_type(filename)
+    if guessed:
+        return guessed
+        
+    return "application/octet-stream"
 
 def is_drive_folder_url(url: str) -> bool:
     """Checks if a Google Drive link points to a folder"""
@@ -168,12 +234,14 @@ def create_stealth_stream_response(file_id: str, direct_url: str, filename: str,
                     bytes_left -= len(data)
                     yield data
 
+        effective_mime = resolve_mime_type(filename, mime_type)
         resp_headers = {
-            "Content-Type": mime_type or "application/octet-stream",
+            "Content-Type": effective_mime,
             "Content-Disposition": f'{disposition_type}; filename="{safe_filename}"',
             "Accept-Ranges": "bytes",
             "Content-Length": str(content_length),
-            "Cache-Control": "public, max-age=3600"
+            "Cache-Control": "public, max-age=3600",
+            "X-Content-Type-Options": "nosniff"
         }
         if status_code == 206:
             resp_headers["Content-Range"] = f"bytes {byte_start}-{byte_end}/{file_size}"
@@ -246,12 +314,14 @@ def create_stealth_stream_response(file_id: str, direct_url: str, filename: str,
                         missing_bytes = (needed_end - needed_start) + 1
                         yield b"\x00" * missing_bytes
 
+            effective_mime = resolve_mime_type(filename, mime_type)
             resp_headers = {
-                "Content-Type": mime_type or "application/octet-stream",
+                "Content-Type": effective_mime,
                 "Content-Disposition": f'{disposition_type}; filename="{safe_filename}"',
                 "Accept-Ranges": "bytes",
                 "Content-Length": str(content_length),
-                "Cache-Control": "public, max-age=3600"
+                "Cache-Control": "public, max-age=3600",
+                "X-Content-Type-Options": "nosniff"
             }
             if status_code == 206:
                 resp_headers["Content-Range"] = f"bytes {byte_start}-{byte_end}/{total_file_size}"
@@ -284,11 +354,14 @@ def create_stealth_stream_response(file_id: str, direct_url: str, filename: str,
     # Clean filename for header
     safe_filename = filename.replace('"', '\\"')
 
+    effective_mime = resolve_mime_type(filename, mime_type, upstream_resp.headers.get("Content-Type"))
+
     resp_headers = {
-        "Content-Type": mime_type or upstream_resp.headers.get("Content-Type", "application/octet-stream"),
+        "Content-Type": effective_mime,
         "Content-Disposition": f'{disposition_type}; filename="{safe_filename}"',
         "Accept-Ranges": "bytes",
-        "Cache-Control": "public, max-age=3600"
+        "Cache-Control": "public, max-age=3600",
+        "X-Content-Type-Options": "nosniff"
     }
 
     # Pass through Content-Length if available
