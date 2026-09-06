@@ -5,14 +5,16 @@ import base64
 import threading
 import urllib.parse
 import shutil
+import tempfile
+import zipfile
 import requests
 from datetime import datetime, timezone
-from flask import Blueprint, request, jsonify, abort, g
+from flask import Blueprint, request, jsonify, abort, g, send_file, after_this_request
 from config import Config
 from app import db
-from app.utils.db_models import User, FileItem, SystemNotice, ChunkUploadPart
+from app.utils.db_models import User, Folder, FileItem, SystemNotice, ChunkUploadPart
 from app.utils.auth_guard import require_login
-from app.utils.drive_streamer import extract_drive_id, create_stealth_stream_response, USER_AGENT, is_drive_folder_url, extract_drive_folder_id
+from app.utils.drive_streamer import extract_drive_id, create_stealth_stream_response, USER_AGENT, is_drive_folder_url, extract_drive_folder_id, resolve_google_drive_stream
 from app.utils.gas_bridge import upload_file_to_gas, upload_file_from_disk_to_gas, delete_file_from_gas, get_storage_stats_from_gas, is_gas_configured, get_folder_files_from_gas
 from app.utils.google_drive_api import is_google_api_configured, initiate_resumable_upload, upload_resumable_chunk, query_upload_status, delete_drive_file, get_storage_quota
 
@@ -46,6 +48,8 @@ def list_files():
     search_query = request.args.get("search", "").strip().lower()
     category = request.args.get("category", "all").strip().lower()
     sort_by = request.args.get("sort", "newest").strip().lower()
+    view = request.args.get("view", "vault").strip().lower()  # vault, starred, trash
+    folder_id_raw = request.args.get("folder_id", None)
 
     current_uid = getattr(g.current_user, "id", None)
     is_admin = getattr(g.current_user, "is_admin", False) or (current_uid == 0)
@@ -57,8 +61,23 @@ def list_files():
             (FileItem.user_id == current_uid) | (FileItem.user_id.is_(None))
         )
 
-    if search_query:
-        query = query.filter(FileItem.filename.ilike(f"%{search_query}%"))
+    if view == "trash":
+        query = query.filter(FileItem.is_trashed == True)
+    elif view == "starred":
+        query = query.filter(FileItem.is_starred == True, FileItem.is_trashed == False)
+    else:
+        # Standard vault view
+        query = query.filter(FileItem.is_trashed == False)
+        if search_query:
+            query = query.filter(FileItem.filename.ilike(f"%{search_query}%"))
+        elif folder_id_raw is not None and folder_id_raw not in ("root", "null", ""):
+            try:
+                folder_id = int(folder_id_raw)
+                query = query.filter(FileItem.folder_id == folder_id)
+            except (ValueError, TypeError):
+                query = query.filter(FileItem.folder_id.is_(None))
+        else:
+            query = query.filter(FileItem.folder_id.is_(None))
 
     if category and category != "all":
         query = query.filter(FileItem.category == category)
@@ -136,6 +155,14 @@ def upload_file():
 
     category = FileItem.detect_category(filename, mime_type)
 
+    folder_id_raw = request.form.get("folder_id", None)
+    target_folder_id = None
+    if folder_id_raw and str(folder_id_raw).lower() not in ("null", "root", "", "undefined"):
+        try:
+            target_folder_id = int(folder_id_raw)
+        except (ValueError, TypeError):
+            target_folder_id = None
+
     current_uid = getattr(g.current_user, "id", None)
     if current_uid and current_uid != 0 and User.query.get(current_uid):
         target_user_id = current_uid
@@ -145,6 +172,7 @@ def upload_file():
 
     new_item = FileItem(
         user_id=target_user_id,
+        folder_id=target_folder_id,
         filename=filename,
         file_size=file_size,
         mime_type=mime_type,
@@ -197,12 +225,12 @@ def upload_chunk():
     chunk_bytes = chunk_file.read()
     chunk_size = len(chunk_bytes)
 
-    # Validate chunk size: up to 16MB raw
-    MAX_CHUNK_BYTES = 16 * 1024 * 1024
+    # Validate chunk size: up to 25MB raw (accommodates 16MB client chunks with safety buffer)
+    MAX_CHUNK_BYTES = 25 * 1024 * 1024
     if chunk_size > MAX_CHUNK_BYTES:
         return jsonify({
             "success": False,
-            "error": f"Chunk too large: {chunk_size // (1024*1024)}MB. Max 16MB."
+            "error": f"Chunk too large: {chunk_size // (1024*1024)}MB. Max 25MB."
         }), 413
 
     # Safe foreign-key and NOT-NULL resolution (SuperAdmin id=0 or guests fallback to primary user or 1)
@@ -212,6 +240,14 @@ def upload_chunk():
     else:
         first_user = User.query.order_by(User.id.asc()).first()
         target_user_id = first_user.id if first_user else 1
+
+    folder_id_raw = request.form.get("folder_id", None)
+    target_folder_id = None
+    if folder_id_raw and str(folder_id_raw).lower() not in ("null", "root", "", "undefined"):
+        try:
+            target_folder_id = int(folder_id_raw)
+        except (ValueError, TypeError):
+            target_folder_id = None
 
     try:
         if is_google_api_configured():
@@ -302,6 +338,7 @@ def upload_chunk():
             category = FileItem.detect_category(filename, mime_type)
             new_item = FileItem(
                 user_id=target_user_id,
+                folder_id=target_folder_id,
                 filename=filename,
                 file_size=total_size or chunk_size,
                 mime_type=mime_type,
@@ -483,6 +520,7 @@ def upload_chunk():
         category = FileItem.detect_category(filename, mime_type)
         new_item = FileItem(
             user_id=target_user_id,
+            folder_id=target_folder_id,
             filename=filename,
             file_size=final_file_size,
             mime_type=mime_type,
@@ -701,26 +739,383 @@ def download_file(file_id: int):
         as_attachment=True
     )
 
-@file_bp.route("/<int:file_id>", methods=["DELETE"])
+@file_bp.route("/<int:file_id>/rename", methods=["PUT"])
 @require_login
-def delete_file(file_id: int):
-    """Delete file from database and trigger deletion from Google Drive. Verifies ownership."""
+def rename_file(file_id: int):
+    """Rename a file display name without altering cloud storage link"""
     item = FileItem.query.get_or_404(file_id)
     if item.user_id != g.current_user.id and not g.current_user.is_admin:
-        return jsonify({"success": False, "error": "Unauthorized to delete this file"}), 403
+        abort(403)
 
-    if item.source_type == "google_api_upload" and item.drive_file_id:
-        delete_drive_file(item.drive_file_id)
-    elif item.source_type == "gas_upload" and item.drive_file_id:
-        delete_file_from_gas(item.drive_file_id)
+    data = request.get_json() or {}
+    new_name = data.get("filename", "").strip()
+    if not new_name:
+        return jsonify({"success": False, "error": "Filename cannot be empty"}), 400
 
-    db.session.delete(item)
+    orig_ext = os.path.splitext(item.filename)[1]
+    new_base, new_ext = os.path.splitext(new_name)
+    if not new_ext and orig_ext:
+        new_name = f"{new_name}{orig_ext}"
+
+    new_name = new_name.replace("/", "-").replace("\\", "-")[:255]
+    item.filename = new_name
+    item.category = FileItem.detect_category(new_name, item.mime_type)
     db.session.commit()
 
     return jsonify({
         "success": True,
-        "message": f"'{item.filename}' deleted successfully"
+        "message": f"File renamed to '{new_name}'",
+        "file": item.to_dict()
     }), 200
+
+@file_bp.route("/<int:file_id>/move", methods=["PUT"])
+@require_login
+def move_file(file_id: int):
+    """Move file into a folder or root"""
+    item = FileItem.query.get_or_404(file_id)
+    if item.user_id != g.current_user.id and not g.current_user.is_admin:
+        abort(403)
+
+    data = request.get_json() or {}
+    folder_id_raw = data.get("folder_id")
+    target_folder_id = None
+    if folder_id_raw and str(folder_id_raw).lower() not in ("root", "null", ""):
+        try:
+            target_folder_id = int(folder_id_raw)
+            f = Folder.query.get(target_folder_id)
+            if not f or (f.user_id != g.current_user.id and not g.current_user.is_admin):
+                return jsonify({"success": False, "error": "Destination folder not found"}), 404
+        except (ValueError, TypeError):
+            target_folder_id = None
+
+    item.folder_id = target_folder_id
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "message": "File moved successfully",
+        "file": item.to_dict()
+    }), 200
+
+@file_bp.route("/<int:file_id>/star", methods=["PUT"])
+@require_login
+def toggle_star_file(file_id: int):
+    """Toggle starred / favorite status for a file"""
+    item = FileItem.query.get_or_404(file_id)
+    if item.user_id != g.current_user.id and not g.current_user.is_admin:
+        abort(403)
+
+    item.is_starred = not item.is_starred
+    db.session.commit()
+
+    status_str = "starred" if item.is_starred else "unstarred"
+    return jsonify({
+        "success": True,
+        "message": f"File {status_str}",
+        "is_starred": item.is_starred
+    }), 200
+
+@file_bp.route("/<int:file_id>/trash", methods=["PUT"])
+@require_login
+def trash_file(file_id: int):
+    """Move file to Recycle Bin (Trash)"""
+    item = FileItem.query.get_or_404(file_id)
+    if item.user_id != g.current_user.id and not g.current_user.is_admin:
+        abort(403)
+
+    item.is_trashed = True
+    db.session.commit()
+    return jsonify({"success": True, "message": f"'{item.filename}' moved to Trash"}), 200
+
+@file_bp.route("/<int:file_id>/restore", methods=["PUT"])
+@require_login
+def restore_file(file_id: int):
+    """Restore file from Recycle Bin"""
+    item = FileItem.query.get_or_404(file_id)
+    if item.user_id != g.current_user.id and not g.current_user.is_admin:
+        abort(403)
+
+    item.is_trashed = False
+    db.session.commit()
+    return jsonify({"success": True, "message": f"'{item.filename}' restored successfully"}), 200
+
+@file_bp.route("/<int:file_id>", methods=["DELETE"])
+@require_login
+def delete_file(file_id: int):
+    """Delete file: soft-delete to trash if in vault; permanently purge if already in trash or ?permanent=true"""
+    item = FileItem.query.get_or_404(file_id)
+    if item.user_id != g.current_user.id and not g.current_user.is_admin:
+        return jsonify({"success": False, "error": "Unauthorized to delete this file"}), 403
+
+    permanent = request.args.get("permanent", "false").lower() in ("true", "1")
+
+    if item.is_trashed or permanent:
+        if item.source_type == "google_api_upload" and item.drive_file_id:
+            delete_drive_file(item.drive_file_id)
+        elif item.source_type == "gas_upload" and item.drive_file_id:
+            delete_file_from_gas(item.drive_file_id)
+
+        db.session.delete(item)
+        db.session.commit()
+        return jsonify({
+            "success": True,
+            "message": f"'{item.filename}' permanently deleted"
+        }), 200
+    else:
+        item.is_trashed = True
+        db.session.commit()
+        return jsonify({
+            "success": True,
+            "message": f"'{item.filename}' moved to Trash",
+            "trashed": True
+        }), 200
+
+@file_bp.route("/batch-download-zip", methods=["POST"])
+@require_login
+def batch_download_zip():
+    """Stream on-the-fly .zip archive of multiple selected files"""
+    data = request.get_json() or {}
+    file_ids = data.get("file_ids", [])
+    if not file_ids:
+        return jsonify({"success": False, "error": "No files selected"}), 400
+
+    current_uid = getattr(g.current_user, "id", None)
+    is_admin = getattr(g.current_user, "is_admin", False) or (current_uid == 0)
+
+    query = FileItem.query.filter(FileItem.id.in_(file_ids))
+    if not is_admin:
+        query = query.filter((FileItem.user_id == current_uid) | (FileItem.user_id.is_(None)))
+
+    files = query.all()
+    if not files:
+        return jsonify({"success": False, "error": "No accessible files found"}), 404
+
+    temp_zip = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    temp_zip_path = temp_zip.name
+    temp_zip.close()
+
+    try:
+        used_names = set()
+        with zipfile.ZipFile(temp_zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for f in files:
+                if not f.drive_file_id and not f.drive_url:
+                    continue
+                arc_name = f.filename
+                counter = 1
+                base, ext = os.path.splitext(f.filename)
+                while arc_name in used_names:
+                    arc_name = f"{base}_{counter}{ext}"
+                    counter += 1
+                used_names.add(arc_name)
+
+                try:
+                    resp = resolve_google_drive_stream(f.drive_file_id)
+                    if resp and resp.status_code in (200, 206):
+                        with zf.open(arc_name, mode="w") as zf_entry:
+                            for chunk in resp.iter_content(chunk_size=64 * 1024):
+                                if chunk:
+                                    zf_entry.write(chunk)
+                except Exception as stream_err:
+                    print(f"[BATCH ZIP] Error streaming '{f.filename}': {stream_err}")
+
+        @after_this_request
+        def cleanup_batch_zip(response):
+            try:
+                if os.path.exists(temp_zip_path):
+                    os.remove(temp_zip_path)
+            except Exception:
+                pass
+            return response
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return send_file(
+            temp_zip_path,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=f"vault_batch_{timestamp}.zip"
+        )
+    except Exception as e:
+        if os.path.exists(temp_zip_path):
+            os.remove(temp_zip_path)
+        return jsonify({"success": False, "error": f"Failed to create ZIP: {str(e)}"}), 500
+
+@file_bp.route("/batch-move", methods=["POST"])
+@require_login
+def batch_move_files():
+    """Move multiple files to a folder or root"""
+    data = request.get_json() or {}
+    file_ids = data.get("file_ids", [])
+    folder_id_raw = data.get("folder_id")
+
+    if not file_ids:
+        return jsonify({"success": False, "error": "No files selected"}), 400
+
+    target_folder_id = None
+    if folder_id_raw and str(folder_id_raw).lower() not in ("root", "null", ""):
+        try:
+            target_folder_id = int(folder_id_raw)
+            f = Folder.query.get(target_folder_id)
+            if not f or (f.user_id != g.current_user.id and not g.current_user.is_admin):
+                return jsonify({"success": False, "error": "Destination folder not found"}), 404
+        except (ValueError, TypeError):
+            target_folder_id = None
+
+    current_uid = getattr(g.current_user, "id", None)
+    is_admin = getattr(g.current_user, "is_admin", False) or (current_uid == 0)
+
+    query = FileItem.query.filter(FileItem.id.in_(file_ids))
+    if not is_admin:
+        query = query.filter((FileItem.user_id == current_uid) | (FileItem.user_id.is_(None)))
+
+    updated_count = 0
+    for f in query.all():
+        f.folder_id = target_folder_id
+        updated_count += 1
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "message": f"Moved {updated_count} files successfully",
+        "count": updated_count
+    }), 200
+
+@file_bp.route("/batch-trash", methods=["POST"])
+@require_login
+def batch_trash_files():
+    """Move multiple files to Recycle Bin"""
+    data = request.get_json() or {}
+    file_ids = data.get("file_ids", [])
+    if not file_ids:
+        return jsonify({"success": False, "error": "No files selected"}), 400
+
+    current_uid = getattr(g.current_user, "id", None)
+    is_admin = getattr(g.current_user, "is_admin", False) or (current_uid == 0)
+
+    query = FileItem.query.filter(FileItem.id.in_(file_ids))
+    if not is_admin:
+        query = query.filter((FileItem.user_id == current_uid) | (FileItem.user_id.is_(None)))
+
+    count = 0
+    for f in query.all():
+        f.is_trashed = True
+        count += 1
+    db.session.commit()
+
+    return jsonify({"success": True, "message": f"{count} files moved to Trash", "count": count}), 200
+
+@file_bp.route("/batch-restore", methods=["POST"])
+@require_login
+def batch_restore_files():
+    """Restore multiple files from Recycle Bin"""
+    data = request.get_json() or {}
+    file_ids = data.get("file_ids", [])
+    if not file_ids:
+        return jsonify({"success": False, "error": "No files selected"}), 400
+
+    current_uid = getattr(g.current_user, "id", None)
+    is_admin = getattr(g.current_user, "is_admin", False) or (current_uid == 0)
+
+    query = FileItem.query.filter(FileItem.id.in_(file_ids))
+    if not is_admin:
+        query = query.filter((FileItem.user_id == current_uid) | (FileItem.user_id.is_(None)))
+
+    count = 0
+    for f in query.all():
+        f.is_trashed = False
+        count += 1
+    db.session.commit()
+
+    return jsonify({"success": True, "message": f"{count} files restored", "count": count}), 200
+
+@file_bp.route("/batch-delete", methods=["POST"])
+@require_login
+def batch_delete_files():
+    """Permanently delete multiple files from Google Drive and DB"""
+    data = request.get_json() or {}
+    file_ids = data.get("file_ids", [])
+    if not file_ids:
+        return jsonify({"success": False, "error": "No files selected"}), 400
+
+    current_uid = getattr(g.current_user, "id", None)
+    is_admin = getattr(g.current_user, "is_admin", False) or (current_uid == 0)
+
+    query = FileItem.query.filter(FileItem.id.in_(file_ids))
+    if not is_admin:
+        query = query.filter((FileItem.user_id == current_uid) | (FileItem.user_id.is_(None)))
+
+    count = 0
+    for f in query.all():
+        try:
+            if f.source_type == "google_api_upload" and f.drive_file_id:
+                delete_drive_file(f.drive_file_id)
+            elif f.source_type == "gas_upload" and f.drive_file_id:
+                delete_file_from_gas(f.drive_file_id)
+        except Exception:
+            pass
+        db.session.delete(f)
+        count += 1
+    db.session.commit()
+
+    return jsonify({"success": True, "message": f"{count} files permanently deleted", "count": count}), 200
+
+@file_bp.route("/<int:file_id>/inspect-archive", methods=["GET"])
+@require_login
+def inspect_archive(file_id: int):
+    """Inspect contents of a ZIP/archive file without downloading the full archive to client"""
+    item = FileItem.query.get_or_404(file_id)
+    if item.user_id != g.current_user.id and not g.current_user.is_admin:
+        abort(403)
+
+    if not item.filename.lower().endswith((".zip", ".jar", ".war", ".apk")):
+        return jsonify({
+            "success": False,
+            "error": "Only standard ZIP/JAR/APK archives can be inspected in browser."
+        }), 400
+
+    try:
+        resp = resolve_google_drive_stream(item.drive_file_id)
+        if not resp or resp.status_code not in (200, 206):
+            return jsonify({"success": False, "error": "Could not access file stream from Google Drive"}), 502
+
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tf:
+            temp_path = tf.name
+            for chunk in resp.iter_content(chunk_size=128 * 1024):
+                if chunk:
+                    tf.write(chunk)
+
+        archive_items = []
+        total_uncompressed = 0
+        try:
+            with zipfile.ZipFile(temp_path, "r") as zf:
+                for zinfo in zf.infolist():
+                    dt = ""
+                    try:
+                        dt = datetime(*zinfo.date_time).strftime("%Y-%m-%d %H:%M")
+                    except Exception:
+                        pass
+                    total_uncompressed += zinfo.file_size
+                    archive_items.append({
+                        "filename": zinfo.filename,
+                        "size": zinfo.file_size,
+                        "compressed_size": zinfo.compress_size,
+                        "is_dir": zinfo.is_dir(),
+                        "date_time": dt
+                    })
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+        return jsonify({
+            "success": True,
+            "archive_filename": item.filename,
+            "total_files": len(archive_items),
+            "total_uncompressed": total_uncompressed,
+            "files": archive_items
+        }), 200
+    except zipfile.BadZipFile:
+        return jsonify({"success": False, "error": "Archive file appears damaged or is not a valid ZIP."}), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Inspection failed: {str(e)}"}), 500
 
 @file_bp.route("/storage-stats", methods=["GET"])
 @require_login

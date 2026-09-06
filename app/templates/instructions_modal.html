@@ -1,0 +1,248 @@
+<!-- Modal: Comprehensive Instructions / How to Use Guide -->
+<div id="instructionsModal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-guide glass-panel">
+        <!-- Modal Header -->
+        <div class="modal-header guide-modal-header">
+            <div class="guide-header-left">
+                <div class="guide-badge-glow">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="guide-modal-title">How to Use StealthVault</h3>
+                    <p class="guide-modal-subtitle">Master file uploading, cloud folders, in-browser previews & stealth streaming</p>
+                </div>
+            </div>
+            <button type="button" class="btn-icon close-btn" data-close-modal title="Close Guide">✕</button>
+        </div>
+
+        <!-- Modal Body with Interactive Tabs -->
+        <div class="modal-body guide-modal-body">
+            <!-- Tab Buttons -->
+            <div class="guide-tab-nav" role="tablist">
+                <button type="button" class="guide-tab-btn active" data-guide-tab="quickstart" role="tab">
+                    <span class="tab-icon">⚡</span>
+                    <span>Quick Start</span>
+                </button>
+                <button type="button" class="guide-tab-btn" data-guide-tab="upload" role="tab">
+                    <span class="tab-icon">📤</span>
+                    <span>Upload & Files</span>
+                </button>
+                <button type="button" class="guide-tab-btn" data-guide-tab="folders" role="tab">
+                    <span class="tab-icon">📁</span>
+                    <span>Folders & ZIPs</span>
+                </button>
+                <button type="button" class="guide-tab-btn" data-guide-tab="previews" role="tab">
+                    <span class="tab-icon">👁️</span>
+                    <span>Previews & ZIPs</span>
+                </button>
+                <button type="button" class="guide-tab-btn" data-guide-tab="batch" role="tab">
+                    <span class="tab-icon">🪄</span>
+                    <span>Batch & Trash</span>
+                </button>
+            </div>
+
+            <!-- Tab Panels -->
+            <div class="guide-tab-panels">
+                <!-- 1. Quick Start Panel -->
+                <div class="guide-panel active" id="guideTab_quickstart" role="tabpanel">
+                    <div class="guide-intro-banner">
+                        <div class="banner-icon">🛡️</div>
+                        <div class="banner-text">
+                            <strong>100% Stealth Cloud Storage</strong>
+                            <p>Files are securely stored in Google Drive while streaming directly through an encrypted proxy. Your ISP and company network only see vault traffic.</p>
+                        </div>
+                    </div>
+
+                    <div class="guide-cards-grid">
+                        <div class="guide-step-card">
+                            <div class="step-badge step-1">1</div>
+                            <div class="step-body">
+                                <h4>Upload Your Files</h4>
+                                <p>Drag & drop anywhere or click the upload zone. Big files up to hundreds of MBs and GBs are supported via chunked resumable upload.</p>
+                            </div>
+                        </div>
+
+                        <div class="guide-step-card">
+                            <div class="step-badge step-2">2</div>
+                            <div class="step-body">
+                                <h4>Organize in Color Folders</h4>
+                                <p>Create custom color-coded folders (Blue, Emerald, Purple, Amber, etc.). Move files between folders or download whole folders as ZIP.</p>
+                            </div>
+                        </div>
+
+                        <div class="guide-step-card">
+                            <div class="step-badge step-3">3</div>
+                            <div class="step-body">
+                                <h4>Instant In-Browser Preview</h4>
+                                <p>Click any thumbnail or file name to view PDFs, stream high-res videos, listen to audio, or inspect code and ZIP archives instantly.</p>
+                            </div>
+                        </div>
+
+                        <div class="guide-step-card">
+                            <div class="step-badge step-4">4</div>
+                            <div class="step-body">
+                                <h4>Batch Actions & Shortcuts</h4>
+                                <p>Use checkboxes to select multiple files to batch move, batch download in a ZIP, or batch delete with the floating action bar.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Upload & Resumable Panel -->
+                <div class="guide-panel" id="guideTab_upload" role="tabpanel">
+                    <div class="guide-feature-list">
+                        <div class="guide-feature-row">
+                            <div class="feature-bullet-icon" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            </div>
+                            <div class="feature-content">
+                                <h5>Chunked Resumable Upload (No File Size Limits)</h5>
+                                <p>Large files (like software, 4K videos, ISOs, and raw datasets) are automatically split into <strong>8MB binary chunks</strong>. If your network fluctuates, failed chunks retry automatically without restarting from zero!</p>
+                            </div>
+                        </div>
+
+                        <div class="guide-feature-row">
+                            <div class="feature-bullet-icon" style="background: rgba(168, 85, 247, 0.15); color: #a855f7;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                            </div>
+                            <div class="feature-content">
+                                <h5>Direct Folder Upload</h5>
+                                <p>When you open any folder, files you upload will automatically go straight into that folder! You can also change the target folder anytime using the folder selector above the upload box.</p>
+                            </div>
+                        </div>
+
+                        <div class="guide-feature-row">
+                            <div class="feature-bullet-icon" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                            </div>
+                            <div class="feature-content">
+                                <h5>Google Drive Link Importer</h5>
+                                <p>Have a public Google Drive sharing link? Paste it in the <strong>"Drive Link Importer"</strong> tab to stream or proxy the file through your vault without downloading it first to your device.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Folders & ZIPs Panel -->
+                <div class="guide-panel" id="guideTab_folders" role="tabpanel">
+                    <div class="guide-feature-list">
+                        <div class="guide-feature-row">
+                            <div class="feature-bullet-icon" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                            </div>
+                            <div class="feature-content">
+                                <h5>Creating & Customizing Folders</h5>
+                                <p>Click the <strong>+ New Folder</strong> button in the top action bar. You can choose a custom color accent (Blue, Purple, Emerald, Amber, Rose, Indigo) to make your workspace instantly identifiable.</p>
+                            </div>
+                        </div>
+
+                        <div class="guide-feature-row">
+                            <div class="feature-bullet-icon" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                            </div>
+                            <div class="feature-content">
+                                <h5>1-Click Folder ZIP Download</h5>
+                                <p>Need to download an entire folder? Just click the three dots (<code>⋮</code>) on any folder card and choose <strong>📦 Download ZIP</strong>. StealthVault will dynamically stream all files inside the folder compressed as a single ZIP download.</p>
+                            </div>
+                        </div>
+
+                        <div class="guide-feature-row">
+                            <div class="feature-bullet-icon" style="background: rgba(244, 63, 94, 0.15); color: #f43f5e;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                            </div>
+                            <div class="feature-content">
+                                <h5>Folder Navigation & Breadcrumbs</h5>
+                                <p>Click on any folder card to step inside. The interactive breadcrumb trail at the top lets you navigate back to parent folders or the root Vault with one click.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Previews & ZIP Inspector Panel -->
+                <div class="guide-panel" id="guideTab_previews" role="tabpanel">
+                    <div class="guide-feature-list">
+                        <div class="guide-feature-row">
+                            <div class="feature-bullet-icon" style="background: rgba(139, 92, 246, 0.15); color: #8b5cf6;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                            </div>
+                            <div class="feature-content">
+                                <h5>In-Browser ZIP Archive Explorer</h5>
+                                <p>Click on any <code>.zip</code> file in your vault! StealthVault will parse the archive headers and let you inspect all files inside without downloading the full archive. You can even filter with live search and download individual files directly!</p>
+                            </div>
+                        </div>
+
+                        <div class="guide-feature-row">
+                            <div class="feature-bullet-icon" style="background: rgba(239, 68, 68, 0.15); color: #ef4444;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                            </div>
+                            <div class="feature-content">
+                                <h5>PDFs, Videos & High-Res Media</h5>
+                                <p>Click to open PDFs with native page navigation and zooming. Stream MP4/WebM videos with speed controls (0.5x to 2x), listen to audio tracks, and inspect high-resolution photography without leaves your browser.</p>
+                            </div>
+                        </div>
+
+                        <div class="guide-feature-row">
+                            <div class="feature-bullet-icon" style="background: rgba(6, 182, 212, 0.15); color: #06b6d4;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                            </div>
+                            <div class="feature-content">
+                                <h5>Formatted Code & Markdown Viewer</h5>
+                                <p>Native dark-mode syntax highlighted viewer for Python, JavaScript, CSS, HTML, JSON, and rendered Markdown documents.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 5. Batch & Trash Panel -->
+                <div class="guide-panel" id="guideTab_batch" role="tabpanel">
+                    <div class="guide-feature-list">
+                        <div class="guide-feature-row">
+                            <div class="feature-bullet-icon" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                            </div>
+                            <div class="feature-content">
+                                <h5>Floating Batch Action Dock</h5>
+                                <p>Select files using their checkboxes (or click <strong>Select All</strong>). A floating action bar docks at the bottom with options to <strong>Download Batch ZIP</strong>, <strong>Move to Folder</strong>, or <strong>Move to Trash</strong> simultaneously.</p>
+                            </div>
+                        </div>
+
+                        <div class="guide-feature-row">
+                            <div class="feature-bullet-icon" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                            </div>
+                            <div class="feature-content">
+                                <h5>⭐ Starred Favorites</h5>
+                                <p>Click the star icon (<code>☆</code>) on any file or folder card. Switch to the <strong>Starred</strong> view tab anytime in the top bar to quickly access your priority items.</p>
+                            </div>
+                        </div>
+
+                        <div class="guide-feature-row">
+                            <div class="feature-bullet-icon" style="background: rgba(244, 63, 94, 0.15); color: #f43f5e;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            </div>
+                            <div class="feature-content">
+                                <h5>Recycle Bin (Trash) with Safe Restore</h5>
+                                <p>Deleted files and folders are moved to the <strong>Trash</strong> tab rather than being permanently destroyed. You can restore them back to your vault at any time, or permanently delete them when you're sure.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="modal-footer guide-modal-footer">
+            <div class="guide-footer-tip">
+                <span class="tip-icon">💡</span>
+                <span>You can reopen this instruction guide anytime by clicking <strong>Instructions</strong> in the top navbar.</span>
+            </div>
+            <button type="button" class="btn-primary guide-finish-btn" data-close-modal>
+                Got It, Let's Go! 🚀
+            </button>
+        </div>
+    </div>
+</div>

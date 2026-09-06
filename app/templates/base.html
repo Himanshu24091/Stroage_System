@@ -18,8 +18,8 @@
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}?v=1.0">
 
     <!-- Stylesheets -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3.5">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}?v=3.5">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3.7">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}?v=3.7">
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -40,6 +40,16 @@
                 </a>
 
                 <div class="nav-actions">
+                    <!-- Instruction / Guide Button -->
+                    <button type="button" id="instructionsNavBtn" class="btn-guide-nav" onclick="openInstructionsModal()" title="How to use StealthVault">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                        <span>Instructions</span>
+                    </button>
+
                     <!-- Desktop Badges -->
                     <div class="stealth-indicator desktop-only" title="Office Proxy Streamer Active">
                         <span class="pulse-dot"></span>
@@ -121,6 +131,11 @@
                                     <span>My Private Vault</span>
                                 </a>
 
+                                <button type="button" onclick="openInstructionsModal()" class="dropdown-nav-item">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                                    <span>Instructions & Guide</span>
+                                </button>
+
                                 {% if session.get('auth_type') == 'admin' %}
                                 <a href="/admin" class="dropdown-nav-item" style="color: var(--amber-primary);">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -196,7 +211,64 @@
                 });
             }
         });
+
+        // Global Instructions Modal Handlers
+        window.openInstructionsModal = function() {
+            const modal = document.getElementById("instructionsModal");
+            if (modal) {
+                modal.classList.add("open");
+            }
+        };
+
+        window.closeInstructionsModal = function() {
+            const modal = document.getElementById("instructionsModal");
+            if (modal) {
+                modal.classList.remove("open");
+                try {
+                    localStorage.setItem("stealthvault_guide_seen", "true");
+                } catch (e) {}
+            }
+        };
+
+        document.addEventListener("DOMContentLoaded", () => {
+            // Guide tabs switcher
+            const guideTabBtns = document.querySelectorAll(".guide-tab-btn");
+            guideTabBtns.forEach(btn => {
+                btn.addEventListener("click", () => {
+                    const tabId = btn.getAttribute("data-guide-tab");
+                    guideTabBtns.forEach(b => b.classList.remove("active"));
+                    btn.classList.add("active");
+
+                    document.querySelectorAll(".guide-panel").forEach(p => p.classList.remove("active"));
+                    const targetPanel = document.getElementById(`guideTab_${tabId}`);
+                    if (targetPanel) targetPanel.classList.add("active");
+                });
+            });
+
+            // Close button inside guide modal
+            const guideModal = document.getElementById("instructionsModal");
+            if (guideModal) {
+                guideModal.querySelectorAll("[data-close-modal]").forEach(b => {
+                    b.addEventListener("click", () => {
+                        window.closeInstructionsModal();
+                    });
+                });
+
+                // Auto open for 1st-time users
+                try {
+                    if (!localStorage.getItem("stealthvault_guide_seen")) {
+                        setTimeout(() => {
+                            window.openInstructionsModal();
+                        }, 750);
+                    }
+                } catch (e) {}
+            }
+        });
     </script>
+
+    <!-- Include Instructions Modal -->
+    {% include "instructions_modal.html" %}
+
     {% block extra_js %}{% endblock %}
     {% block scripts %}{% endblock %}
 </body>

@@ -26,11 +26,13 @@ def create_app(config_class=Config):
     from app.routes.view_routes import view_bp
     from app.routes.auth_routes import auth_bp
     from app.routes.file_routes import file_bp
+    from app.routes.folder_routes import folder_bp
     from app.routes.admin_routes import admin_bp
 
     app.register_blueprint(view_bp)
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(file_bp, url_prefix="/api/files")
+    app.register_blueprint(folder_bp, url_prefix="/api/folders")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
 
     # Global Health Check endpoint
@@ -55,7 +57,7 @@ def create_app(config_class=Config):
 
     # Ensure tables are created and schema is migrated
     with app.app_context():
-        from app.utils.db_models import User, FileItem, SystemNotice, ChunkUploadPart
+        from app.utils.db_models import User, Folder, FileItem, SystemNotice, ChunkUploadPart
         db.create_all()
 
         # Database Schema Migrations for PostgreSQL / SQLite
@@ -69,6 +71,14 @@ def create_app(config_class=Config):
                 "ALTER TABLE file_items ALTER COLUMN drive_url DROP NOT NULL;",
                 "ALTER TABLE chunk_upload_parts DROP CONSTRAINT IF EXISTS chunk_upload_parts_user_id_fkey;",
                 "ALTER TABLE chunk_upload_parts ALTER COLUMN user_id DROP NOT NULL;",
+                "ALTER TABLE chunk_upload_parts ALTER COLUMN drive_file_id TYPE TEXT;",
+                "ALTER TABLE chunk_upload_parts ALTER COLUMN filename TYPE VARCHAR(512);",
+                "ALTER TABLE file_items ADD COLUMN IF NOT EXISTS folder_id INTEGER REFERENCES folders(id);",
+                "ALTER TABLE file_items ADD COLUMN IF NOT EXISTS is_starred BOOLEAN DEFAULT FALSE;",
+                "ALTER TABLE file_items ADD COLUMN IF NOT EXISTS is_trashed BOOLEAN DEFAULT FALSE;",
+                "CREATE INDEX IF NOT EXISTS ix_file_items_folder_id ON file_items(folder_id);",
+                "CREATE INDEX IF NOT EXISTS ix_file_items_is_starred ON file_items(is_starred);",
+                "CREATE INDEX IF NOT EXISTS ix_file_items_is_trashed ON file_items(is_trashed);"
             ]
             for stmt in migration_statements:
                 try:
@@ -78,5 +88,20 @@ def create_app(config_class=Config):
                         print(f"[DB MIGRATION] Executed: {stmt}")
                 except Exception as pg_err:
                     print(f"[DB MIGRATION] Notice on ({stmt}): {pg_err}")
+        else:
+            # SQLite migration check
+            try:
+                with db.engine.connect() as conn:
+                    result = conn.execute(text("PRAGMA table_info(file_items);")).fetchall()
+                    existing_cols = {row[1] for row in result}
+                    if "folder_id" not in existing_cols:
+                        conn.execute(text("ALTER TABLE file_items ADD COLUMN folder_id INTEGER;"))
+                    if "is_starred" not in existing_cols:
+                        conn.execute(text("ALTER TABLE file_items ADD COLUMN is_starred BOOLEAN DEFAULT 0;"))
+                    if "is_trashed" not in existing_cols:
+                        conn.execute(text("ALTER TABLE file_items ADD COLUMN is_trashed BOOLEAN DEFAULT 0;"))
+                    conn.commit()
+            except Exception as sqlite_err:
+                print(f"[DB MIGRATION] SQLite notice: {sqlite_err}")
 
     return app

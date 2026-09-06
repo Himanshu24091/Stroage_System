@@ -178,6 +178,60 @@
 
     <!-- File Manager Section -->
     <section class="file-manager-section">
+        <!-- View Tabs & Breadcrumbs Bar -->
+        <div class="vault-nav-header glass-panel">
+            <div class="vault-view-tabs" id="vaultViewTabs">
+                <button class="view-tab-btn active" data-view="vault">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <span>My Vault</span>
+                </button>
+                <button class="view-tab-btn" data-view="starred">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                    </svg>
+                    <span>Starred</span>
+                </button>
+                <button class="view-tab-btn" data-view="trash">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                    <span>Trash</span>
+                </button>
+            </div>
+
+            <div class="folder-action-buttons">
+                <button id="newFolderBtn" class="btn-primary btn-sm">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="12" y1="5" x2="12" y2="19"/>
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                    <span>New Folder</span>
+                </button>
+                <button id="emptyTrashBtn" class="btn-danger btn-sm hidden">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                    <span>Empty Trash</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Breadcrumbs Navigation -->
+        <div class="breadcrumbs-row" id="breadcrumbsRow">
+            <nav id="vaultBreadcrumbs" class="vault-breadcrumbs" aria-label="Breadcrumb">
+                <span class="breadcrumb-item active" data-folder-id="root">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                    </svg>
+                    <span>Vault</span>
+                </span>
+            </nav>
+        </div>
+
         <!-- Control Bar: Search, Category Pills, View Switch -->
         <div class="manager-controls-bar glass-panel">
             <div class="search-box">
@@ -185,7 +239,7 @@
                     <circle cx="11" cy="11" r="8"/>
                     <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
-                <input type="text" id="searchInput" placeholder="Search files by name...">
+                <input type="text" id="searchInput" placeholder="Search files across vault...">
             </div>
 
             <div class="category-pills" id="categoryFilterContainer">
@@ -230,16 +284,165 @@
             </div>
         </div>
 
-        <!-- Files Container (Grid & Table Mode) -->
-        <div id="fileListContainer" class="files-grid-view">
-            <!-- Dynamically populated via JS -->
-            <div class="empty-state" id="loadingState">
-                <div class="spinner-ring"></div>
-                <p>Loading files from vault...</p>
+        <!-- Folders Container -->
+        <div id="foldersSection" class="folders-section">
+            <div class="section-title-row">
+                <h4 class="section-subheading">
+                    <span>Folders</span>
+                    <span id="foldersCountBadge" class="count-badge">0</span>
+                </h4>
+            </div>
+            <div id="foldersGrid" class="folders-grid"></div>
+        </div>
+
+        <!-- Files Section -->
+        <div class="files-section">
+            <div class="section-title-row">
+                <h4 class="section-subheading">
+                    <span id="filesSectionTitle">Files</span>
+                    <span id="filesCountBadge" class="count-badge">0</span>
+                </h4>
+                <div class="section-sub-actions">
+                    <button id="selectAllBtn" class="link-action-btn">Select All</button>
+                </div>
+            </div>
+
+            <!-- Files Container (Grid & Table Mode) -->
+            <div id="fileListContainer" class="files-grid-view">
+                <!-- Dynamically populated via JS -->
+                <div class="empty-state" id="loadingState">
+                    <div class="spinner-ring"></div>
+                    <p>Loading files from vault...</p>
+                </div>
             </div>
         </div>
     </section>
 
+</div>
+
+<!-- Floating Multi-Select Batch Action Bar -->
+<div id="floatingBatchBar" class="floating-batch-bar hidden">
+    <div class="batch-info">
+        <span class="batch-icon">✓</span>
+        <span id="batchSelectedCount">0 items selected</span>
+    </div>
+    <div class="batch-actions">
+        <button id="batchDownloadZipBtn" class="batch-btn" title="Download selected as ZIP archive">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span>Download ZIP</span>
+        </button>
+        <button id="batchMoveBtn" class="batch-btn" title="Move selected to folder">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            </svg>
+            <span>Move</span>
+        </button>
+        <button id="batchTrashBtn" class="batch-btn batch-btn-danger" title="Move selected to Trash">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </svg>
+            <span>Trash</span>
+        </button>
+        <button id="batchRestoreBtn" class="batch-btn batch-btn-success hidden" title="Restore selected from Trash">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="1 4 1 10 7 10"/>
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+            </svg>
+            <span>Restore</span>
+        </button>
+        <button id="batchDeletePermanentBtn" class="batch-btn batch-btn-danger hidden" title="Permanently delete selected">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+            <span>Delete Permanently</span>
+        </button>
+        <button id="batchDeselectBtn" class="batch-btn-close" title="Clear selection">✕</button>
+    </div>
+</div>
+
+<!-- Modal: New Folder -->
+<div id="newFolderModal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-sm glass-panel">
+        <div class="modal-header">
+            <h3>Create New Folder</h3>
+            <button class="btn-icon close-btn" data-close-modal>✕</button>
+        </div>
+        <form id="newFolderForm">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="newFolderNameInput">Folder Name</label>
+                    <input type="text" id="newFolderNameInput" placeholder="e.g. Invoices, Photos, Backups" required maxlength="100">
+                </div>
+                <div class="form-group">
+                    <label>Folder Color Accent</label>
+                    <div class="color-picker-row" id="folderColorPicker">
+                        <label class="color-radio"><input type="radio" name="folderColor" value="blue" checked><span class="color-circle color-blue"></span></label>
+                        <label class="color-radio"><input type="radio" name="folderColor" value="purple"><span class="color-circle color-purple"></span></label>
+                        <label class="color-radio"><input type="radio" name="folderColor" value="emerald"><span class="color-circle color-emerald"></span></label>
+                        <label class="color-radio"><input type="radio" name="folderColor" value="amber"><span class="color-circle color-amber"></span></label>
+                        <label class="color-radio"><input type="radio" name="folderColor" value="rose"><span class="color-circle color-rose"></span></label>
+                        <label class="color-radio"><input type="radio" name="folderColor" value="indigo"><span class="color-circle color-indigo"></span></label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" data-close-modal>Cancel</button>
+                <button type="submit" class="btn-primary">Create Folder</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Rename Item -->
+<div id="renameModal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-sm glass-panel">
+        <div class="modal-header">
+            <h3 id="renameModalTitle">Rename</h3>
+            <button class="btn-icon close-btn" data-close-modal>✕</button>
+        </div>
+        <form id="renameForm">
+            <input type="hidden" id="renameItemId">
+            <input type="hidden" id="renameItemType">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="renameInput">New Name</label>
+                    <input type="text" id="renameInput" required maxlength="255">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" data-close-modal>Cancel</button>
+                <button type="submit" class="btn-primary">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Move Items -->
+<div id="moveModal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-sm glass-panel">
+        <div class="modal-header">
+            <h3>Move to Folder</h3>
+            <button class="btn-icon close-btn" data-close-modal>✕</button>
+        </div>
+        <form id="moveForm">
+            <div class="modal-body">
+                <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">Choose destination folder:</p>
+                <div id="moveFolderList" class="move-folder-select-list">
+                    <!-- Dynamically populated with folders -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" data-close-modal>Cancel</button>
+                <button type="submit" class="btn-primary">Move Here</button>
+            </div>
+        </form>
+    </div>
 </div>
 
 <!-- Include Preview Modal -->
@@ -248,8 +451,8 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{{ url_for('static', filename='js/preview.js') }}?v=4.0"></script>
-<script src="{{ url_for('static', filename='js/app.js') }}?v=4.0"></script>
+<script src="{{ url_for('static', filename='js/preview.js') }}?v=4.7"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=4.7"></script>
 {% if enable_auth %}
 <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
 {% endif %}

@@ -50,12 +50,83 @@ class User(db.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
 
+class Folder(db.Model):
+    """Folder model for organizing files into hierarchical directories"""
+    __tablename__ = "folders"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    name = db.Column(db.String(255), nullable=False, index=True)
+    parent_id = db.Column(db.Integer, db.ForeignKey("folders.id", ondelete="CASCADE"), nullable=True, index=True)
+    color = db.Column(db.String(32), default="blue")  # blue, purple, emerald, amber, rose, indigo
+    is_starred = db.Column(db.Boolean, default=False, index=True)
+    is_trashed = db.Column(db.Boolean, default=False, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    user = db.relationship("User", backref=db.backref("folders", cascade="all, delete-orphan", lazy="dynamic"))
+    parent = db.relationship("Folder", remote_side=[id], backref=db.backref("subfolders", cascade="all, delete-orphan", lazy="dynamic"))
+    files = db.relationship("FileItem", back_populates="folder", cascade="all, delete-orphan", lazy="dynamic")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    @property
+    def file_count(self) -> int:
+        return self.files.filter_by(is_trashed=False).count()
+
+    @property
+    def total_size(self) -> int:
+        return sum(f.file_size or 0 for f in self.files.filter_by(is_trashed=False).all())
+
+    @property
+    def formatted_size(self) -> str:
+        bytes_val = self.total_size
+        if bytes_val < 1024:
+            return f"{bytes_val} B"
+        elif bytes_val < 1024 * 1024:
+            return f"{(bytes_val / 1024):.1f} KB"
+        elif bytes_val < 1024 * 1024 * 1024:
+            return f"{(bytes_val / (1024 * 1024)):.2f} MB"
+        else:
+            return f"{(bytes_val / (1024 * 1024 * 1024)):.2f} GB"
+
+    def get_path(self) -> list:
+        """Returns list of {id, name} representing full ancestor path up to root"""
+        path = []
+        curr = self
+        visited = set()
+        while curr and curr.id not in visited:
+            visited.add(curr.id)
+            path.append({"id": curr.id, "name": curr.name})
+            curr = curr.parent
+        return list(reversed(path))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "name": self.name,
+            "parent_id": self.parent_id,
+            "color": self.color or "blue",
+            "is_starred": bool(self.is_starred),
+            "is_trashed": bool(self.is_trashed),
+            "file_count": self.file_count,
+            "total_size": self.total_size,
+            "formatted_size": self.formatted_size,
+            "path": self.get_path(),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
+
 class FileItem(db.Model):
     """File metadata model stored in SQLite/PostgreSQL, scoped to individual users"""
     __tablename__ = "file_items"
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    folder_id = db.Column(db.Integer, db.ForeignKey("folders.id", ondelete="SET NULL"), nullable=True, index=True)
     filename = db.Column(db.String(255), nullable=False, index=True)
     file_size = db.Column(db.BigInteger, default=0)  # In bytes
     mime_type = db.Column(db.String(128), default="application/octet-stream")
@@ -63,11 +134,14 @@ class FileItem(db.Model):
     drive_file_id = db.Column(db.Text, nullable=True)  # db.Text: stores single ID or MULTIPART JSON array of any size (up to 1GB+ files)
     drive_url = db.Column(db.Text, nullable=True)
     source_type = db.Column(db.String(64), default="direct_link")  # 'gas_upload' or 'direct_link'
+    is_starred = db.Column(db.Boolean, default=False, index=True)
+    is_trashed = db.Column(db.Boolean, default=False, index=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-    # Relationship to user
+    # Relationships
     user = db.relationship("User", back_populates="files")
+    folder = db.relationship("Folder", back_populates="files")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -119,6 +193,7 @@ class FileItem(db.Model):
         return {
             "id": self.id,
             "user_id": self.user_id,
+            "folder_id": self.folder_id,
             "filename": self.filename,
             "file_size": self.file_size,
             "formatted_size": self.formatted_size,
@@ -126,6 +201,8 @@ class FileItem(db.Model):
             "category": self.category,
             "drive_file_id": self.drive_file_id,
             "source_type": self.source_type,
+            "is_starred": bool(self.is_starred),
+            "is_trashed": bool(self.is_trashed),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "download_url": f"/api/files/download/{self.id}",
@@ -179,9 +256,9 @@ class ChunkUploadPart(db.Model):
     user_id = db.Column(db.Integer, nullable=True, index=True)         # optional, no strict FK to allow admin (id=0) or guest uploads
     part_number = db.Column(db.Integer, nullable=False)                 # 1-based index
     total_parts = db.Column(db.Integer, nullable=False)
-    drive_file_id = db.Column(db.String(255), nullable=False)           # Google Drive file_id of this part
+    drive_file_id = db.Column(db.Text, nullable=False)                  # Google Drive file_id of this part or Resumable Session URL
     part_size = db.Column(db.BigInteger, default=0)                    # bytes
-    filename = db.Column(db.String(255), nullable=False)               # original filename
+    filename = db.Column(db.String(512), nullable=False)               # original filename
     mime_type = db.Column(db.String(128), default="application/octet-stream")
     total_size = db.Column(db.BigInteger, default=0)                   # full file size in bytes
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
