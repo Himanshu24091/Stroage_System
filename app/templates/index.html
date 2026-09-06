@@ -367,7 +367,7 @@
 </div>
 
 <!-- Modal: New Folder -->
-<div id="newFolderModal" class="modal-backdrop" aria-hidden="true">
+<div id="newFolderModal" class="modal-backdrop" role="dialog" aria-modal="true">
     <div class="modal-dialog modal-dialog-sm glass-panel">
         <div class="modal-header">
             <h3>Create New Folder</h3>
@@ -400,7 +400,7 @@
 </div>
 
 <!-- Modal: Rename Item -->
-<div id="renameModal" class="modal-backdrop" aria-hidden="true">
+<div id="renameModal" class="modal-backdrop" role="dialog" aria-modal="true">
     <div class="modal-dialog modal-dialog-sm glass-panel">
         <div class="modal-header">
             <h3 id="renameModalTitle">Rename</h3>
@@ -424,7 +424,7 @@
 </div>
 
 <!-- Modal: Move Items -->
-<div id="moveModal" class="modal-backdrop" aria-hidden="true">
+<div id="moveModal" class="modal-backdrop" role="dialog" aria-modal="true">
     <div class="modal-dialog modal-dialog-sm glass-panel">
         <div class="modal-header">
             <h3>Move to Folder</h3>
@@ -451,8 +451,8 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{{ url_for('static', filename='js/preview.js') }}?v=5.2"></script>
-<script src="{{ url_for('static', filename='js/app.js') }}?v=5.2"></script>
+<script src="{{ url_for('static', filename='js/preview.js') }}?v=5.3"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=5.3"></script>
 {% if enable_auth %}
 <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
 {% endif %}

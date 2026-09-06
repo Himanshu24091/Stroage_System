@@ -1024,10 +1024,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Close modal utility
     document.querySelectorAll("[data-close-modal]").forEach(btn => {
         btn.addEventListener("click", () => {
-            document.querySelectorAll(".modal-backdrop").forEach(m => {
-                m.classList.remove("open");
-                m.setAttribute("aria-hidden", "true");
-            });
+            document.querySelectorAll(".modal-backdrop").forEach(m => m.classList.remove("open"));
         });
     });
 
@@ -1036,7 +1033,6 @@ document.addEventListener("DOMContentLoaded", () => {
         newFolderBtn.addEventListener("click", () => {
             newFolderForm.reset();
             newFolderModal.classList.add("open");
-            newFolderModal.setAttribute("aria-hidden", "false");
             newFolderNameInput.focus();
         });
     }
@@ -1064,7 +1060,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (d.success) {
                     window.showToast(`Folder '${name}' created!`, "success");
                     newFolderModal.classList.remove("open");
-                    newFolderModal.setAttribute("aria-hidden", "true");
                     loadFolders();
                 } else {
                     window.showToast(d.error || "Failed to create folder", "error");
@@ -1082,7 +1077,6 @@ document.addEventListener("DOMContentLoaded", () => {
         renameInput.value = currentName;
         renameModalTitle.textContent = type === "folder" ? "Rename Folder" : "Rename File";
         renameModal.classList.add("open");
-        renameModal.setAttribute("aria-hidden", "false");
         renameInput.focus();
     }
 
@@ -1107,7 +1101,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (d.success) {
                     window.showToast("Renamed successfully", "success");
                     renameModal.classList.remove("open");
-                    renameModal.setAttribute("aria-hidden", "true");
                     if (type === "folder") loadFolders();
                     else loadFiles();
                 } else {
@@ -1126,7 +1119,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         moveFolderList.innerHTML = `<div class="spinner-ring" style="margin:20px auto;"></div>`;
         moveModal.classList.add("open");
-        moveModal.setAttribute("aria-hidden", "false");
 
         try {
             const res = await fetch("/api/folders?view=vault");
@@ -1183,7 +1175,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (d.success) {
                     window.showToast(d.message || "Files moved successfully", "success");
                     moveModal.classList.remove("open");
-                    moveModal.setAttribute("aria-hidden", "true");
                     selectedFileIds.clear();
                     updateBatchBar();
                     refreshAll();
@@ -1254,7 +1245,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (dropzone && fileInput) {
         dropzone.addEventListener("click", (e) => {
-            if (e.target.closest("#uploadProgressCard")) return;
+            if (e.target === fileInput || e.target.closest("#uploadProgressCard")) return;
             fileInput.click();
         });
 

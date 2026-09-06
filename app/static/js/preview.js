@@ -91,7 +91,6 @@ class MediaPreviewController {
         `;
 
         this.modal.classList.add("open");
-        this.modal.setAttribute("aria-hidden", "false");
         document.body.style.overflow = "hidden";
 
         // Render appropriate player based on category
@@ -101,7 +100,6 @@ class MediaPreviewController {
     close() {
         if (!this.modal) return;
         this.modal.classList.remove("open");
-        this.modal.setAttribute("aria-hidden", "true");
         document.body.style.overflow = "";
 
         if (this.speedSelect) {
