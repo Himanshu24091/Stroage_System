@@ -3,7 +3,7 @@
  * 
  * Features:
  * 1. Auto session out when browser tab is closed (Affects website only, Google Account is 100% untouched).
- * 2. Instant tab authentication check (0ms delay, anti-FOAC screen shield).
+ * 2. Instant anti-FOAC visual shield (0ms screen hiding on new unauthenticated tabs).
  * 3. Multi-tab coordination via BroadcastChannel and localStorage heartbeats.
  * 4. Back-button (bfcache) navigation protection: pressing Back (<-) after logout will NEVER reach dashboard.
  */
@@ -19,7 +19,7 @@
     const TAB_ID = "tab_" + Math.random().toString(36).substring(2, 9) + "_" + Date.now();
     window.__VAULT_TAB_ID = TAB_ID;
 
-    // Check if current page is protected (Dashboard or Admin)
+    // Route type helpers
     const isProtectedPage = function () {
         const path = window.location.pathname;
         return path === "/" || path === "/admin";
@@ -65,7 +65,6 @@
     const unregisterTab = function () {
         const reg = getRegistry();
         delete reg[TAB_ID];
-        // Prune stale tabs older than 5 seconds
         const now = Date.now();
         let remainingCount = 0;
         for (const id in reg) {
@@ -78,6 +77,53 @@
         saveRegistry(reg);
         return remainingCount;
     };
+
+    // -------------------------------------------------------------
+    // Global API for Login & Manual Logout
+    // -------------------------------------------------------------
+    window.setVaultTabSessionActive = function () {
+        try {
+            sessionStorage.setItem(TAB_STORAGE_KEY, "true");
+        } catch (e) {}
+        registerTab();
+        document.documentElement.style.visibility = "";
+    };
+
+    window.terminateVaultSession = async function () {
+        try {
+            sessionStorage.removeItem(TAB_STORAGE_KEY);
+        } catch (e) {}
+        unregisterTab();
+
+        try {
+            document.cookie = "vault_tab_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
+        } catch (e) {}
+
+        if (broadcastChannel) {
+            try {
+                broadcastChannel.postMessage({ type: "FORCE_LOGOUT", sender: TAB_ID });
+            } catch (e) {}
+        }
+
+        try {
+            await fetch("/api/auth/logout", { method: "POST" });
+        } catch (e) {}
+
+        const target = window.location.pathname.startsWith("/admin") ? "/admin/login?reason=logged_out" : "/login?reason=logged_out";
+        window.location.replace(target);
+    };
+
+    // Expose global alias for existing logout calls
+    window.handleLogout = window.terminateVaultSession;
+
+    // If on Auth Page (/login, /admin/login), DO NOT run session timeout or pagehide handlers
+    if (isAuthPage()) {
+        return;
+    }
+
+    // -------------------------------------------------------------
+    // Protected Pages Logic (/ and /admin)
+    // -------------------------------------------------------------
 
     // Periodic heartbeat to keep this tab alive in registry
     setInterval(() => {
@@ -102,8 +148,10 @@
                 }
             } else if (data.type === "FORCE_LOGOUT") {
                 // Another tab clicked manual logout -> logout all tabs immediately
-                sessionStorage.removeItem(TAB_STORAGE_KEY);
-                document.cookie = "vault_tab_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
+                try {
+                    sessionStorage.removeItem(TAB_STORAGE_KEY);
+                    document.cookie = "vault_tab_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
+                } catch (e) {}
                 if (isProtectedPage()) {
                     const target = window.location.pathname.startsWith("/admin") ? "/admin/login?reason=logged_out" : "/login?reason=logged_out";
                     window.location.replace(target);
@@ -112,16 +160,13 @@
         };
     }
 
-    // -------------------------------------------------------------
     // 1. Initial Page Load Check (Protected Pages)
-    // -------------------------------------------------------------
     if (isProtectedPage()) {
         const hasTabSession = sessionStorage.getItem(TAB_STORAGE_KEY) === "true";
 
         if (hasTabSession) {
-            // Tab is already marked active (e.g. navigation within site or page reload)
+            // Tab is already marked active (navigation or reload within same tab)
             registerTab();
-            // Restore visibility in case shield was set
             document.documentElement.style.visibility = "";
         } else {
             // Check if this was an in-tab reload
@@ -139,7 +184,7 @@
                 registerTab();
                 document.documentElement.style.visibility = "";
             } else {
-                // Brand new tab: ask existing tabs via BroadcastChannel with ultra-fast 30ms window
+                // Brand new tab: ask existing tabs via BroadcastChannel with ultra-fast 35ms window
                 let answered = false;
 
                 if (broadcastChannel) {
@@ -169,7 +214,7 @@
                             // No other tab confirmed -> Previous tab was closed!
                             executeAutoLogout("tab_closed");
                         }
-                    }, 30);
+                    }, 35);
                 } else {
                     // Fallback if BroadcastChannel not supported
                     const reg = getRegistry();
@@ -195,42 +240,27 @@
 
     // Auto logout handler
     function executeAutoLogout(reason) {
-        sessionStorage.removeItem(TAB_STORAGE_KEY);
+        try {
+            sessionStorage.removeItem(TAB_STORAGE_KEY);
+        } catch (e) {}
         unregisterTab();
         try {
             document.cookie = "vault_tab_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
-            if (navigator.sendBeacon) {
-                navigator.sendBeacon("/api/auth/logout");
-            } else {
-                fetch("/api/auth/logout", { method: "POST", keepalive: true });
-            }
+        } catch (e) {}
+        try {
+            fetch("/api/auth/logout", { method: "POST", keepalive: true }).catch(() => {});
         } catch (e) {}
         const target = window.location.pathname.startsWith("/admin") ? "/admin/login?reason=" : "/login?reason=";
         window.location.replace(target + encodeURIComponent(reason || "tab_closed"));
     }
 
-    // -------------------------------------------------------------
-    // 2. Tab Close Detection (pagehide)
-    // -------------------------------------------------------------
+    // 2. Tab Unload: unregister from active tabs registry
     window.addEventListener("pagehide", function () {
-        // Unregister tab from localStorage registry
-        const remainingTabs = unregisterTab();
-
-        // If this was the last active tab of the website, notify backend
-        if (remainingTabs <= 0) {
-            try {
-                if (navigator.sendBeacon) {
-                    navigator.sendBeacon("/api/auth/logout");
-                }
-            } catch (e) {}
-        }
+        unregisterTab();
     });
 
-    // -------------------------------------------------------------
     // 3. Browser Back-Button (Bfcache) Protection
-    // -------------------------------------------------------------
     window.addEventListener("pageshow", function (event) {
-        // event.persisted is true when browser restores page from Back-Forward cache
         const navEntries = (window.performance && window.performance.getEntriesByType)
             ? window.performance.getEntriesByType("navigation")
             : [];
@@ -240,51 +270,13 @@
             if (isProtectedPage()) {
                 const hasTabSession = sessionStorage.getItem(TAB_STORAGE_KEY) === "true";
                 if (!hasTabSession) {
-                    // User was logged out and clicked Back -> Block immediately
                     document.documentElement.style.visibility = "hidden";
                     const target = window.location.pathname.startsWith("/admin") ? "/admin/login?reason=logged_out" : "/login?reason=logged_out";
                     window.location.replace(target);
                 } else {
-                    // Force a reload from server so HTTP Cache-Control re-validates auth
                     window.location.reload();
                 }
-            } else if (isAuthPage()) {
-                sessionStorage.removeItem(TAB_STORAGE_KEY);
             }
         }
     });
-
-    // -------------------------------------------------------------
-    // 4. Global API for Login / Manual Logout
-    // -------------------------------------------------------------
-    window.setVaultTabSessionActive = function () {
-        sessionStorage.setItem(TAB_STORAGE_KEY, "true");
-        registerTab();
-        document.documentElement.style.visibility = "";
-    };
-
-    window.terminateVaultSession = async function () {
-        sessionStorage.removeItem(TAB_STORAGE_KEY);
-        unregisterTab();
-
-        try {
-            document.cookie = "vault_tab_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
-        } catch (e) {}
-
-        if (broadcastChannel) {
-            try {
-                broadcastChannel.postMessage({ type: "FORCE_LOGOUT", sender: TAB_ID });
-            } catch (e) {}
-        }
-
-        try {
-            await fetch("/api/auth/logout", { method: "POST" });
-        } catch (e) {}
-
-        const target = window.location.pathname.startsWith("/admin") ? "/admin/login?reason=logged_out" : "/login?reason=logged_out";
-        window.location.replace(target);
-    };
-
-    // Expose global alias for existing logout calls
-    window.handleLogout = window.terminateVaultSession;
 })();
