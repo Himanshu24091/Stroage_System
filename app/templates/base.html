@@ -6,6 +6,68 @@
     <meta name="description" content="Stealth Cloud Storage Vault - Direct streaming and storage system for large files">
     <title>{% block title %}{{ app_title | default('Stealth Storage Vault') }}{% endblock %}</title>
 
+    <!-- 0ms Immediate Tab Auth Guard & Anti-FOAC Visual Shield -->
+    <script>
+        (function() {
+            var path = window.location.pathname;
+            if (path === "/" || path === "/admin") {
+                // Check if this navigation is an in-tab reload (F5 / Ctrl+R / reload button)
+                var isReload = false;
+                try {
+                    var nav = window.performance && window.performance.getEntriesByType && window.performance.getEntriesByType("navigation");
+                    if (nav && nav.length > 0 && nav[0].type === "reload") {
+                        isReload = true;
+                    } else if (window.performance && window.performance.navigation && window.performance.navigation.type === 1) {
+                        isReload = true;
+                    }
+                } catch (e) {}
+
+                var hasTabActive = false;
+                try {
+                    hasTabActive = sessionStorage.getItem("vault_tab_active") === "true";
+                } catch (e) {}
+
+                // If tab already has active marker or is an in-tab reload, allow immediately
+                if (hasTabActive || isReload) {
+                    if (isReload && !hasTabActive) {
+                        try { sessionStorage.setItem("vault_tab_active", "true"); } catch (e) {}
+                    }
+                    return;
+                }
+
+                // If this is a brand new tab, immediately hide the entire document so 0 pixels are rendered
+                document.documentElement.style.visibility = "hidden";
+
+                // Check localStorage registry: Are there any OTHER live tabs open?
+                var hasOtherLiveTabs = false;
+                try {
+                    var raw = localStorage.getItem("vault_active_tab_registry");
+                    var reg = raw ? JSON.parse(raw) : {};
+                    var now = Date.now();
+                    for (var id in reg) {
+                        if (now - reg[id] < 3500) {
+                            hasOtherLiveTabs = true;
+                            break;
+                        }
+                    }
+                } catch (e) {}
+
+                // If no other tabs are open, the previous tab was closed!
+                // Terminate session and redirect to login immediately without delay!
+                if (!hasOtherLiveTabs) {
+                    try {
+                        document.cookie = "vault_tab_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
+                        if (navigator.sendBeacon) {
+                            navigator.sendBeacon("/api/auth/logout");
+                        }
+                    } catch (e) {}
+                    var targetLogin = path.indexOf("/admin") !== -1 ? "/admin/login?reason=tab_closed" : "/login?reason=tab_closed";
+                    window.location.replace(targetLogin);
+                }
+            }
+        })();
+    </script>
+
     <!-- Google Fonts: Inter & Outfit -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,7 +85,7 @@
     {% block extra_css %}{% endblock %}
 
     <!-- Tab Session & Back-Button Protection Manager -->
-    <script src="{{ url_for('static', filename='js/session_manager.js') }}?v=1.0"></script>
+    <script src="{{ url_for('static', filename='js/session_manager.js') }}?v=1.1"></script>
 </head>
 <body>
     <div class="app-wrapper">

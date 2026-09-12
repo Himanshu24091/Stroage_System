@@ -3,16 +3,15 @@
  * 
  * Features:
  * 1. Auto session out when browser tab is closed (Affects website only, Google Account is 100% untouched).
- * 2. Distinguishes page refreshes (F5) so active user does NOT get logged out on reload.
+ * 2. Instant tab authentication check (0ms delay, anti-FOAC screen shield).
  * 3. Multi-tab coordination via BroadcastChannel and localStorage heartbeats.
- * 4. Back-button (bfcache) navigation protection: pressing Back (<-) after logout will NOT reach dashboard.
+ * 4. Back-button (bfcache) navigation protection: pressing Back (<-) after logout will NEVER reach dashboard.
  */
 
 (function () {
     "use strict";
 
     const TAB_STORAGE_KEY = "vault_tab_active";
-    const RELOAD_FLAG_KEY = "vault_is_reloading";
     const REGISTRY_KEY = "vault_active_tab_registry";
     const CHANNEL_NAME = "vault_tab_channel";
 
@@ -66,15 +65,18 @@
     const unregisterTab = function () {
         const reg = getRegistry();
         delete reg[TAB_ID];
-        // Prune stale tabs older than 8 seconds
+        // Prune stale tabs older than 5 seconds
         const now = Date.now();
+        let remainingCount = 0;
         for (const id in reg) {
-            if (now - reg[id] > 8000) {
+            if (now - reg[id] > 5000) {
                 delete reg[id];
+            } else {
+                remainingCount++;
             }
         }
         saveRegistry(reg);
-        return Object.keys(reg).length;
+        return remainingCount;
     };
 
     // Periodic heartbeat to keep this tab alive in registry
@@ -82,14 +84,14 @@
         if (sessionStorage.getItem(TAB_STORAGE_KEY) === "true") {
             registerTab();
         }
-    }, 3000);
+    }, 2000);
 
     // Listen to inter-tab communication
     if (broadcastChannel) {
         broadcastChannel.onmessage = function (event) {
             const data = event.data || {};
             if (data.type === "CHECK_ACTIVE_TAB" && data.sender !== TAB_ID) {
-                // If this tab is active, reply to the new tab so it knows a session is active
+                // If this tab is active, reply immediately so the new tab knows a session is alive
                 if (sessionStorage.getItem(TAB_STORAGE_KEY) === "true") {
                     try {
                         broadcastChannel.postMessage({
@@ -101,8 +103,10 @@
             } else if (data.type === "FORCE_LOGOUT") {
                 // Another tab clicked manual logout -> logout all tabs immediately
                 sessionStorage.removeItem(TAB_STORAGE_KEY);
+                document.cookie = "vault_tab_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
                 if (isProtectedPage()) {
-                    window.location.replace("/login?reason=logged_out");
+                    const target = window.location.pathname.startsWith("/admin") ? "/admin/login?reason=logged_out" : "/login?reason=logged_out";
+                    window.location.replace(target);
                 }
             }
         };
@@ -115,58 +119,75 @@
         const hasTabSession = sessionStorage.getItem(TAB_STORAGE_KEY) === "true";
 
         if (hasTabSession) {
-            // Tab is already marked active (e.g. navigation within site or page refresh)
+            // Tab is already marked active (e.g. navigation within site or page reload)
             registerTab();
+            // Restore visibility in case shield was set
+            document.documentElement.style.visibility = "";
         } else {
-            // No tab marker found in this tab! Could another tab be open?
-            // Ask existing tabs via BroadcastChannel
-            let answered = false;
+            // Check if this was an in-tab reload
+            const isReload = (function() {
+                try {
+                    const nav = window.performance && window.performance.getEntriesByType && window.performance.getEntriesByType("navigation");
+                    if (nav && nav.length > 0 && nav[0].type === "reload") return true;
+                    if (window.performance && window.performance.navigation && window.performance.navigation.type === 1) return true;
+                } catch(e) {}
+                return false;
+            })();
 
-            if (broadcastChannel) {
-                const messageHandler = function (event) {
-                    const data = event.data || {};
-                    if (data.type === "ACTIVE_TAB_CONFIRMED") {
-                        answered = true;
+            if (isReload) {
+                sessionStorage.setItem(TAB_STORAGE_KEY, "true");
+                registerTab();
+                document.documentElement.style.visibility = "";
+            } else {
+                // Brand new tab: ask existing tabs via BroadcastChannel with ultra-fast 30ms window
+                let answered = false;
+
+                if (broadcastChannel) {
+                    const messageHandler = function (event) {
+                        const data = event.data || {};
+                        if (data.type === "ACTIVE_TAB_CONFIRMED") {
+                            answered = true;
+                            sessionStorage.setItem(TAB_STORAGE_KEY, "true");
+                            registerTab();
+                            document.documentElement.style.visibility = "";
+                            broadcastChannel.removeEventListener("message", messageHandler);
+                        }
+                    };
+
+                    broadcastChannel.addEventListener("message", messageHandler);
+
+                    try {
+                        broadcastChannel.postMessage({
+                            type: "CHECK_ACTIVE_TAB",
+                            sender: TAB_ID
+                        });
+                    } catch (e) {}
+
+                    setTimeout(() => {
+                        broadcastChannel.removeEventListener("message", messageHandler);
+                        if (!answered) {
+                            // No other tab confirmed -> Previous tab was closed!
+                            executeAutoLogout("tab_closed");
+                        }
+                    }, 30);
+                } else {
+                    // Fallback if BroadcastChannel not supported
+                    const reg = getRegistry();
+                    const now = Date.now();
+                    let hasLiveOtherTab = false;
+                    for (const id in reg) {
+                        if (id !== TAB_ID && now - reg[id] < 3500) {
+                            hasLiveOtherTab = true;
+                            break;
+                        }
+                    }
+                    if (hasLiveOtherTab) {
                         sessionStorage.setItem(TAB_STORAGE_KEY, "true");
                         registerTab();
-                        broadcastChannel.removeEventListener("message", messageHandler);
-                    }
-                };
-
-                broadcastChannel.addEventListener("message", messageHandler);
-
-                try {
-                    broadcastChannel.postMessage({
-                        type: "CHECK_ACTIVE_TAB",
-                        sender: TAB_ID
-                    });
-                } catch (e) {}
-
-                // Give other tabs 120ms to respond
-                setTimeout(() => {
-                    broadcastChannel.removeEventListener("message", messageHandler);
-                    if (!answered) {
-                        // No other tab is open! Previous tab was closed!
-                        // Invalidate session on server and redirect to login
+                        document.documentElement.style.visibility = "";
+                    } else {
                         executeAutoLogout("tab_closed");
                     }
-                }, 120);
-            } else {
-                // Fallback if BroadcastChannel not supported
-                const reg = getRegistry();
-                const now = Date.now();
-                let hasLiveOtherTab = false;
-                for (const id in reg) {
-                    if (id !== TAB_ID && now - reg[id] < 5000) {
-                        hasLiveOtherTab = true;
-                        break;
-                    }
-                }
-                if (hasLiveOtherTab) {
-                    sessionStorage.setItem(TAB_STORAGE_KEY, "true");
-                    registerTab();
-                } else {
-                    executeAutoLogout("tab_closed");
                 }
             }
         }
@@ -177,47 +198,31 @@
         sessionStorage.removeItem(TAB_STORAGE_KEY);
         unregisterTab();
         try {
+            document.cookie = "vault_tab_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
             if (navigator.sendBeacon) {
                 navigator.sendBeacon("/api/auth/logout");
             } else {
                 fetch("/api/auth/logout", { method: "POST", keepalive: true });
             }
         } catch (e) {}
-        window.location.replace("/login?reason=" + encodeURIComponent(reason || "tab_closed"));
+        const target = window.location.pathname.startsWith("/admin") ? "/admin/login?reason=" : "/login?reason=";
+        window.location.replace(target + encodeURIComponent(reason || "tab_closed"));
     }
 
     // -------------------------------------------------------------
-    // 2. Tab Close vs Page Refresh (F5) Detection
+    // 2. Tab Close Detection (pagehide)
     // -------------------------------------------------------------
-    window.addEventListener("beforeunload", function () {
-        // Set flag that page is reloading or navigating within site
-        try {
-            sessionStorage.setItem(RELOAD_FLAG_KEY, "true");
-        } catch (e) {}
-    });
+    window.addEventListener("pagehide", function () {
+        // Unregister tab from localStorage registry
+        const remainingTabs = unregisterTab();
 
-    // Clear reload flag once page finishes loading
-    document.addEventListener("DOMContentLoaded", function () {
-        try {
-            sessionStorage.removeItem(RELOAD_FLAG_KEY);
-        } catch (e) {}
-    });
-
-    window.addEventListener("pagehide", function (event) {
-        // pagehide fires when tab is closed OR reloaded
-        const isReloading = sessionStorage.getItem(RELOAD_FLAG_KEY) === "true";
-
-        if (!isReloading) {
-            // The user CLOSED the tab!
-            const remainingTabs = unregisterTab();
-            // If this was the last active tab of the website, notify backend
-            if (remainingTabs <= 0) {
-                try {
-                    if (navigator.sendBeacon) {
-                        navigator.sendBeacon("/api/auth/logout");
-                    }
-                } catch (e) {}
-            }
+        // If this was the last active tab of the website, notify backend
+        if (remainingTabs <= 0) {
+            try {
+                if (navigator.sendBeacon) {
+                    navigator.sendBeacon("/api/auth/logout");
+                }
+            } catch (e) {}
         }
     });
 
@@ -236,13 +241,14 @@
                 const hasTabSession = sessionStorage.getItem(TAB_STORAGE_KEY) === "true";
                 if (!hasTabSession) {
                     // User was logged out and clicked Back -> Block immediately
-                    window.location.replace("/login?reason=logged_out");
+                    document.documentElement.style.visibility = "hidden";
+                    const target = window.location.pathname.startsWith("/admin") ? "/admin/login?reason=logged_out" : "/login?reason=logged_out";
+                    window.location.replace(target);
                 } else {
                     // Force a reload from server so HTTP Cache-Control re-validates auth
                     window.location.reload();
                 }
             } else if (isAuthPage()) {
-                // If on login page and pressed back, ensure tab marker is cleared
                 sessionStorage.removeItem(TAB_STORAGE_KEY);
             }
         }
@@ -254,11 +260,16 @@
     window.setVaultTabSessionActive = function () {
         sessionStorage.setItem(TAB_STORAGE_KEY, "true");
         registerTab();
+        document.documentElement.style.visibility = "";
     };
 
     window.terminateVaultSession = async function () {
         sessionStorage.removeItem(TAB_STORAGE_KEY);
         unregisterTab();
+
+        try {
+            document.cookie = "vault_tab_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
+        } catch (e) {}
 
         if (broadcastChannel) {
             try {
@@ -270,8 +281,8 @@
             await fetch("/api/auth/logout", { method: "POST" });
         } catch (e) {}
 
-        // Use replace so login page overwrites history and Back button cannot revisit dashboard
-        window.location.replace("/login?reason=logged_out");
+        const target = window.location.pathname.startsWith("/admin") ? "/admin/login?reason=logged_out" : "/login?reason=logged_out";
+        window.location.replace(target);
     };
 
     // Expose global alias for existing logout calls

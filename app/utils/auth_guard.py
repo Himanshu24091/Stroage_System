@@ -5,10 +5,18 @@ from app.utils.db_models import User
 def require_login(view_func):
     """
     Decorator to protect standard user routes ensuring a valid user is logged in.
+    Instantly verifies active tab session via vault_tab_session cookie.
     Sets g.current_user for the request context.
     """
     @wraps(view_func)
     def decorated_function(*args, **kwargs):
+        # 1. Instant Tab Closure Check: If vault_tab_session cookie is missing, tab was closed!
+        if "vault_tab_session" not in request.cookies:
+            session.clear()
+            if request.path.startswith("/api/"):
+                return jsonify({"success": False, "error": "Session ended. Please log in."}), 401
+            return redirect(url_for("view_bp.login_page", reason="tab_closed"))
+
         # If logged in as Super Admin, allow viewing or redirect to admin
         if session.get("auth_type") == "admin":
             class SuperAdminProxy:
@@ -40,11 +48,19 @@ def require_login(view_func):
 def require_admin(view_func):
     """
     Decorator to protect admin routes.
+    - Instantly verifies active tab session via vault_tab_session cookie.
     - If a standard user (e.g. him200) tries to access, BLOCKS them with 403 Forbidden.
     - Only allows dedicated Super Admin sessions (auth_type == 'admin').
     """
     @wraps(view_func)
     def decorated_function(*args, **kwargs):
+        # 1. Instant Tab Closure Check: If vault_tab_session cookie is missing, tab was closed!
+        if "vault_tab_session" not in request.cookies:
+            session.clear()
+            if request.path.startswith("/api/"):
+                return jsonify({"success": False, "error": "Super Admin session ended. Please log in."}), 401
+            return redirect(url_for("view_bp.admin_login_page", reason="tab_closed"))
+
         # CASE 1: Standard User logged in -> STRICTLY BLOCK
         if session.get("user_id"):
             current_user = User.query.get(session.get("user_id"))

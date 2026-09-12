@@ -48,11 +48,13 @@ def register():
     session["is_admin"] = False
     session.permanent = False
 
-    return jsonify({
+    resp = jsonify({
         "success": True,
         "message": "Account created successfully!",
         "user": user.to_dict()
-    }), 201
+    })
+    resp.set_cookie("vault_tab_session", "active", path="/", samesite="Lax")
+    return resp, 201
 
 @auth_bp.route("/admin-login", methods=["POST"])
 def admin_login():
@@ -71,11 +73,13 @@ def admin_login():
         session["admin_logged_in"] = True
         session["username"] = "SuperAdmin"
         session.permanent = False
-        return jsonify({
+        resp = jsonify({
             "success": True,
             "message": "Super Admin access granted",
             "redirect": "/admin"
-        }), 200
+        })
+        resp.set_cookie("vault_tab_session", "active", path="/", samesite="Lax")
+        return resp, 200
 
     return jsonify({"success": False, "error": "Invalid Master Admin Security PIN"}), 401
 
@@ -101,17 +105,21 @@ def login():
     session["is_admin"] = False
     session.permanent = False
 
-    return jsonify({
+    resp = jsonify({
         "success": True,
         "message": f"Welcome back, {user.username}!",
         "user": user.to_dict()
-    }), 200
+    })
+    resp.set_cookie("vault_tab_session", "active", path="/", samesite="Lax")
+    return resp, 200
 
 @auth_bp.route("/logout", methods=["POST", "GET"])
 def logout():
     """Log out current user and invalidate website session"""
     session.clear()
-    return jsonify({"success": True, "message": "Logged out successfully"}), 200
+    resp = jsonify({"success": True, "message": "Logged out successfully"})
+    resp.delete_cookie("vault_tab_session", path="/")
+    return resp, 200
 
 @auth_bp.route("/me", methods=["GET"])
 @require_login
