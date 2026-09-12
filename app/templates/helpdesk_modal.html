@@ -42,8 +42,8 @@
                     
                     <div class="ticket-id-display-wrapper">
                         <span class="ticket-id-label">Your Ticket ID:</span>
-                        <div class="ticket-id-badge" id="newTicketIdBadge">TK-00000</div>
-                        <button type="button" class="btn-secondary btn-sm" id="copyNewTicketIdBtn" onclick="copyGeneratedTicketId()">
+                        <div class="ticket-id-badge" id="newTicketIdBadge" onclick="copyGeneratedTicketId()" title="Click to copy Ticket ID" style="cursor: pointer;">TK-00000</div>
+                        <button type="button" class="btn-secondary btn-sm" id="copyNewTicketIdBtn" onclick="copyGeneratedTicketId()" title="Copy Ticket ID to Clipboard">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -91,13 +91,8 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="ticketSubject" class="form-label">Subject / Short Summary <span class="text-danger">*</span></label>
-                        <input type="text" id="ticketSubject" class="form-input" placeholder="e.g., Forgot my account password, please reset" maxlength="255" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="ticketMessage" class="form-label">Detailed Description <span class="text-danger">*</span></label>
-                        <textarea id="ticketMessage" class="form-input form-textarea" rows="4" placeholder="Explain the problem or requirement in detail so the admin can assist you promptly..." required></textarea>
+                        <label for="ticketMessage" class="form-label">Describe Your Problem / Requirement <span class="text-danger">*</span></label>
+                        <textarea id="ticketMessage" class="form-input form-textarea" rows="4" placeholder="Explain the problem, requirement, or password reset request in detail so the admin can assist you promptly..." required></textarea>
                     </div>
 
                     <div id="ticketSubmitError" class="auth-error hidden" style="margin-bottom: 14px;">
@@ -135,9 +130,8 @@
                     <!-- Dynamic Ticket Card Content -->
                 </div>
 
-                <!-- Track Empty / Error State -->
+                <!-- Track Empty / Error State (Clean without extra search icon) -->
                 <div id="trackEmptyState" class="track-empty-state">
-                    <div class="empty-icon">🔍</div>
                     <p class="empty-text">Enter your <strong>Ticket ID</strong> above to view status, administrator responses, or updated login credentials.</p>
                 </div>
             </div>

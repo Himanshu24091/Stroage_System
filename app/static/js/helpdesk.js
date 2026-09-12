@@ -72,17 +72,56 @@ function switchHelpDeskTab(tab) {
  * Copies the freshly generated Ticket ID to clipboard
  */
 function copyGeneratedTicketId() {
-    if (!lastGeneratedTicketId) return;
-    navigator.clipboard.writeText(lastGeneratedTicketId).then(() => {
-        const btn = document.getElementById("copyNewTicketIdBtn");
-        if (btn) {
-            const originalHtml = btn.innerHTML;
-            btn.innerHTML = `<span>✓ Copied!</span>`;
-            setTimeout(() => { btn.innerHTML = originalHtml; }, 2000);
+    let ticketId = (lastGeneratedTicketId || "").trim();
+    const idBadge = document.getElementById("newTicketIdBadge");
+    if (idBadge && idBadge.textContent) {
+        const badgeText = idBadge.textContent.trim();
+        if (badgeText && badgeText !== "TK-00000") {
+            ticketId = badgeText;
         }
-    }).catch(() => {
-        alert(`Ticket ID: ${lastGeneratedTicketId}`);
-    });
+    }
+    if (!ticketId) return;
+
+    // Reliable clipboard copy supporting both modern Clipboard API & textarea fallback
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(ticketId).catch(() => {});
+    }
+
+    try {
+        const ta = document.createElement("textarea");
+        ta.value = ticketId;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        ta.style.top = "-9999px";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+    } catch (err) {}
+
+    // Visual button & badge feedback
+    const btn = document.getElementById("copyNewTicketIdBtn");
+    if (btn) {
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> <span style="color: #10b981; font-weight: 700;">Copied!</span>`;
+        btn.style.borderColor = "#10b981";
+        btn.style.background = "rgba(16, 185, 129, 0.15)";
+        setTimeout(() => {
+            btn.innerHTML = originalHtml;
+            btn.style.borderColor = "";
+            btn.style.background = "";
+        }, 2200);
+    }
+
+    if (idBadge) {
+        idBadge.style.boxShadow = "0 0 20px rgba(16, 185, 129, 0.6)";
+        setTimeout(() => { idBadge.style.boxShadow = ""; }, 1500);
+    }
+
+    if (typeof window.showToast === "function") {
+        window.showToast(`Ticket ID ${ticketId} copied to clipboard!`, "success");
+    }
 }
 
 /**
@@ -396,7 +435,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const username = document.getElementById("ticketUsername").value.trim();
             const category = document.getElementById("ticketCategory").value;
-            const subject = document.getElementById("ticketSubject").value.trim();
             const message = document.getElementById("ticketMessage").value.trim();
             const errorBox = document.getElementById("ticketSubmitError");
             const errorText = document.getElementById("ticketSubmitErrorText");
@@ -409,6 +447,25 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 return;
             }
+
+            if (!message || message.length < 5) {
+                if (errorBox) {
+                    errorText.textContent = "Please describe your issue or requirement (at least 5 characters).";
+                    errorBox.classList.remove("hidden");
+                }
+                return;
+            }
+
+            // Derive subject automatically from category and message
+            const catMap = {
+                "password_reset": "Password Reset Request",
+                "account_access": "Account Login Issue",
+                "file_issue": "File Storage Issue",
+                "bug_issue": "Technical Bug Report",
+                "other": "General Support Inquiry"
+            };
+            const firstLine = message.split("\n")[0].trim();
+            const subject = firstLine.length <= 60 ? firstLine : (catMap[category] || "Support Request");
 
             if (submitBtn) {
                 submitBtn.disabled = true;

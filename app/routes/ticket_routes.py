@@ -34,15 +34,23 @@ def create_ticket():
     if not username or len(username) < 3:
         return jsonify({"success": False, "error": "Please provide a valid username (at least 3 characters)"}), 400
 
-    if not subject:
-        return jsonify({"success": False, "error": "Please enter a subject for your request"}), 400
-
     if not message or len(message) < 5:
         return jsonify({"success": False, "error": "Please describe your issue or request in more detail (at least 5 characters)"}), 400
 
     valid_categories = {"password_reset", "account_access", "file_issue", "bug_issue", "other"}
     if category not in valid_categories:
         category = "password_reset"
+
+    if not subject:
+        cat_map = {
+            "password_reset": "Password Reset Request",
+            "account_access": "Account Login Issue",
+            "file_issue": "File Storage Issue",
+            "bug_issue": "Technical Bug Report",
+            "other": "General Support Inquiry"
+        }
+        first_line = message.split("\n")[0].strip()
+        subject = first_line[:60] if first_line else cat_map.get(category, "Support Request")
 
     # Match existing registered user if possible
     user = User.query.filter(func.lower(User.username) == username.lower()).first()
