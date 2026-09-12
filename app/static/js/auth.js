@@ -84,7 +84,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 const data = await res.json();
 
                 if (res.ok && data.success) {
-                    window.location.href = "/";
+                    if (typeof window.setVaultTabSessionActive === "function") {
+                        window.setVaultTabSessionActive();
+                    } else {
+                        sessionStorage.setItem("vault_tab_active", "true");
+                    }
+                    window.location.replace("/");
                 } else {
                     loginErrorText.textContent = data.error || "Invalid username/email or password";
                     loginErrorMessage.classList.remove("hidden");
@@ -124,7 +129,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 const data = await res.json();
 
                 if (res.ok && data.success) {
-                    window.location.href = "/";
+                    if (typeof window.setVaultTabSessionActive === "function") {
+                        window.setVaultTabSessionActive();
+                    } else {
+                        sessionStorage.setItem("vault_tab_active", "true");
+                    }
+                    window.location.replace("/");
                 } else {
                     regErrorText.textContent = data.error || "Registration failed. Try again.";
                     regErrorMessage.classList.remove("hidden");
@@ -140,14 +150,16 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // 5. Logout Action
     if (logoutBtn) {
         logoutBtn.addEventListener("click", async () => {
-            try {
-                await fetch("/api/auth/logout", { method: "POST" });
-                window.location.href = "/login";
-            } catch (err) {
-                window.location.href = "/login";
+            if (typeof window.terminateVaultSession === "function") {
+                await window.terminateVaultSession();
+            } else {
+                sessionStorage.removeItem("vault_tab_active");
+                try {
+                    await fetch("/api/auth/logout", { method: "POST" });
+                } catch (err) {}
+                window.location.replace("/login?reason=logged_out");
             }
         });
     }

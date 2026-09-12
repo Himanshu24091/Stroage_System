@@ -55,6 +55,16 @@ def create_app(config_class=Config):
             mimetype="image/vnd.microsoft.icon"
         )
 
+    # Prevent browser caching on authenticated pages & APIs (Bfcache Back-Button Protection)
+    @app.after_request
+    def set_security_headers(response):
+        content_type = response.headers.get("Content-Type", "")
+        if "text/html" in content_type or "application/json" in content_type or response.status_code in (401, 403):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0, post-check=0, pre-check=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
     # Ensure tables are created and schema is migrated
     with app.app_context():
         from app.utils.db_models import User, Folder, FileItem, SystemNotice, ChunkUploadPart

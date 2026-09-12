@@ -113,7 +113,12 @@
 
                     const data = await res.json();
                     if (res.ok && data.success) {
-                        window.location.href = data.redirect || "/admin";
+                        if (typeof window.setVaultTabSessionActive === "function") {
+                            window.setVaultTabSessionActive();
+                        } else {
+                            sessionStorage.setItem("vault_tab_active", "true");
+                        }
+                        window.location.replace(data.redirect || "/admin");
                     } else {
                         adminErrorText.textContent = data.error || "Invalid Security PIN";
                         adminErrorMessage.classList.remove("hidden");

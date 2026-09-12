@@ -9,6 +9,7 @@ class Config:
     
     # Secret Key for Flask session management
     SECRET_KEY = os.getenv("SECRET_KEY", "stealth-vault-secret-key-change-in-prod-987654321")
+    SESSION_PERMANENT = False
     
     # Auth Toggle (Option 3): Set to True to require Master PIN, False for direct frictionless access
     ENABLE_AUTH = os.getenv("ENABLE_AUTH", "False").lower() in ("true", "1", "yes")

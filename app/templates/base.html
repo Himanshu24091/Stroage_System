@@ -21,6 +21,9 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=5.3">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}?v=5.3">
     {% block extra_css %}{% endblock %}
+
+    <!-- Tab Session & Back-Button Protection Manager -->
+    <script src="{{ url_for('static', filename='js/session_manager.js') }}?v=1.0"></script>
 </head>
 <body>
     <div class="app-wrapper">
@@ -183,14 +186,19 @@
             }, 3500);
         };
 
-        // Global Logout handler
+        // Global Logout handler (Tab session cleanup & history replacement)
         window.handleLogout = async function() {
-            try {
-                await fetch('/api/auth/logout', { method: 'POST' });
-            } catch (err) {
-                console.error("Logout network error:", err);
+            if (typeof window.terminateVaultSession === "function") {
+                await window.terminateVaultSession();
+            } else {
+                try {
+                    sessionStorage.removeItem("vault_tab_active");
+                    await fetch('/api/auth/logout', { method: 'POST' });
+                } catch (err) {
+                    console.error("Logout network error:", err);
+                }
+                window.location.replace('/login?reason=logged_out');
             }
-            window.location.href = '/login';
         };
 
         // Navigation Dropdown Toggle

@@ -46,7 +46,7 @@ def register():
     session["user_id"] = user.id
     session["username"] = user.username
     session["is_admin"] = False
-    session.permanent = True
+    session.permanent = False
 
     return jsonify({
         "success": True,
@@ -70,7 +70,7 @@ def admin_login():
         session["is_admin"] = True
         session["admin_logged_in"] = True
         session["username"] = "SuperAdmin"
-        session.permanent = True
+        session.permanent = False
         return jsonify({
             "success": True,
             "message": "Super Admin access granted",
@@ -99,7 +99,7 @@ def login():
     session["user_id"] = user.id
     session["username"] = user.username
     session["is_admin"] = False
-    session.permanent = True
+    session.permanent = False
 
     return jsonify({
         "success": True,
@@ -107,9 +107,9 @@ def login():
         "user": user.to_dict()
     }), 200
 
-@auth_bp.route("/logout", methods=["POST"])
+@auth_bp.route("/logout", methods=["POST", "GET"])
 def logout():
-    """Log out current user"""
+    """Log out current user and invalidate website session"""
     session.clear()
     return jsonify({"success": True, "message": "Logged out successfully"}), 200
 

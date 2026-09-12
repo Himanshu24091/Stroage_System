@@ -17,6 +17,15 @@
             <p class="auth-subtitle">Private, firewall-bypassing cloud storage with Google Drive bridge</p>
         </div>
 
+        <!-- Session Security Notice Banner -->
+        <div id="sessionSecurityBanner" class="auth-notice-banner hidden" style="background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(14, 165, 233, 0.35); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; font-size: 0.85rem; color: #bae6fd; display: flex; align-items: center; gap: 10px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; color: #38bdf8;">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            <span id="sessionSecurityText">Session ended for security. Please sign in to access your vault.</span>
+        </div>
+
         <!-- Auth Navigation Tabs -->
         <div class="auth-tab-switch">
             <button id="tabLoginBtn" class="auth-tab active" type="button" onclick="switchAuthTab('login')">Sign
@@ -153,6 +162,22 @@
 </div>
 
 <script>
+    document.addEventListener("DOMContentLoaded", () => {
+        // Detect reason from URL query
+        const urlParams = new URLSearchParams(window.location.search);
+        const reason = urlParams.get("reason");
+        const banner = document.getElementById("sessionSecurityBanner");
+        const bannerText = document.getElementById("sessionSecurityText");
+        if (banner && reason) {
+            banner.classList.remove("hidden");
+            if (reason === "tab_closed") {
+                bannerText.textContent = "🔒 Session ended because your browser tab was closed. Sign in required to access dashboard.";
+            } else if (reason === "logged_out") {
+                bannerText.textContent = "✓ You have been logged out. Sign in required to access dashboard.";
+            }
+        }
+    });
+
     function switchAuthTab(tab) {
         const tabLoginBtn = document.getElementById("tabLoginBtn");
         const tabRegisterBtn = document.getElementById("tabRegisterBtn");
