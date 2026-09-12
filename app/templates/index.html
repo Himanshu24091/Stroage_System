@@ -220,7 +220,7 @@
             </div>
         </div>
 
-        <!-- Breadcrumbs Navigation -->
+        <!-- Breadcrumbs Navigation & Drag-and-Drop Root Drop Target -->
         <div class="breadcrumbs-row" id="breadcrumbsRow">
             <nav id="vaultBreadcrumbs" class="vault-breadcrumbs" aria-label="Breadcrumb">
                 <span class="breadcrumb-item active" data-folder-id="root">
@@ -230,6 +230,12 @@
                     <span>Vault</span>
                 </span>
             </nav>
+            <div id="rootDropZone" class="root-drop-zone hidden" data-folder-id="root" title="Drop here to move to Root Vault">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                </svg>
+                <span>Drop here to move to Root Vault (/)</span>
+            </div>
         </div>
 
         <!-- Control Bar: Search, Category Pills, View Switch -->

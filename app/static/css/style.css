@@ -1550,3 +1550,123 @@ tr:has(.dropdown-menu:not(.hidden)) {
         align-items: stretch;
     }
 }
+
+/* ==========================================================================
+   DRAG & DROP FILE MOVEMENT STYLES
+   ========================================================================== */
+.file-card[draggable="true"],
+.files-table tbody tr[draggable="true"] {
+    cursor: grab;
+    user-select: none;
+    -webkit-user-drag: element;
+}
+
+.file-card[draggable="true"]:active,
+.files-table tbody tr[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.file-card.is-dragging,
+.files-table tbody tr.is-dragging {
+    opacity: 0.35 !important;
+    transform: scale(0.97);
+    border: 1.5px dashed #38bdf8 !important;
+    cursor: grabbing;
+    box-shadow: none !important;
+}
+
+/* Body active drag state */
+body.vault-dragging-active .folder-card {
+    border: 1.5px dashed rgba(56, 189, 248, 0.3);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+body.vault-dragging-active .breadcrumb-item[data-folder-id] {
+    border: 1px dashed rgba(56, 189, 248, 0.4);
+    background: rgba(56, 189, 248, 0.06);
+}
+
+/* Folder Card Hover / Drop-Target Active */
+.folder-card.drag-over {
+    transform: translateY(-4px) scale(1.03) !important;
+    background: rgba(30, 41, 59, 0.95) !important;
+    border: 2px solid #38bdf8 !important;
+    box-shadow: 0 0 25px rgba(56, 189, 248, 0.45), 0 10px 30px rgba(0, 0, 0, 0.4) !important;
+}
+
+.folder-card.drag-over .folder-icon-box {
+    transform: scale(1.15);
+    background: rgba(56, 189, 248, 0.25) !important;
+    color: #38bdf8 !important;
+}
+
+/* Breadcrumbs Drop Target Active */
+.breadcrumb-item.drag-over {
+    background: rgba(56, 189, 248, 0.25) !important;
+    border: 1.5px solid #38bdf8 !important;
+    color: #38bdf8 !important;
+    transform: scale(1.06);
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
+}
+
+/* Dedicated Root Drop Zone Banner */
+.breadcrumbs-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.root-drop-zone {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 14px;
+    background: rgba(14, 165, 233, 0.1);
+    border: 1.5px dashed rgba(56, 189, 248, 0.45);
+    border-radius: 8px;
+    color: #38bdf8;
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    margin-left: auto;
+    animation: fadeInDrop 0.2s ease forwards;
+}
+
+@keyframes fadeInDrop {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.root-drop-zone:hover,
+.root-drop-zone.drag-over {
+    background: rgba(14, 165, 233, 0.25) !important;
+    border: 2px solid #38bdf8 !important;
+    box-shadow: 0 0 20px rgba(56, 189, 248, 0.5) !important;
+    transform: scale(1.04) !important;
+    color: #fff !important;
+}
+
+/* Custom Floating Drag Badge */
+.drag-ghost-badge {
+    position: fixed;
+    top: -9999px;
+    left: -9999px;
+    pointer-events: none;
+    z-index: 99999;
+    background: #0f172a;
+    border: 1.5px solid #38bdf8;
+    border-radius: 8px;
+    padding: 8px 14px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6), 0 0 20px rgba(56, 189, 248, 0.35);
+    color: #fff;
+    font-size: 0.85rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Inter', sans-serif;
+}
+

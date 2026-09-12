@@ -1014,6 +1014,9 @@ def batch_move_files():
 
     updated_count = 0
     for f in query.all():
+        if f.folder_id == target_folder_id:
+            updated_count += 1
+            continue
         f.folder_id = target_folder_id
         if target_drive_folder and f.drive_file_id and f.source_type == "google_api_upload":
             try:
@@ -1027,6 +1030,47 @@ def batch_move_files():
         "success": True,
         "message": f"Moved {updated_count} files successfully",
         "count": updated_count
+    }), 200
+
+@file_bp.route("/<int:file_id>/move", methods=["POST", "PUT"])
+@require_login
+def move_single_file(file_id):
+    """Move a single file to a folder or root"""
+    data = request.get_json() or {}
+    folder_id_raw = data.get("folder_id")
+    target_folder_id = None
+    dest_folder_obj = None
+    if folder_id_raw and str(folder_id_raw).lower() not in ("root", "null", ""):
+        try:
+            target_folder_id = int(folder_id_raw)
+            dest_folder_obj = Folder.query.get(target_folder_id)
+            if not dest_folder_obj or (dest_folder_obj.user_id != g.current_user.id and not g.current_user.is_admin):
+                return jsonify({"success": False, "error": "Destination folder not found"}), 404
+        except (ValueError, TypeError):
+            target_folder_id = None
+
+    current_uid = getattr(g.current_user, "id", None)
+    is_admin = getattr(g.current_user, "is_admin", False) or (current_uid == 0)
+
+    f = FileItem.query.get(file_id)
+    if not f or (not is_admin and f.user_id != current_uid and f.user_id is not None):
+        return jsonify({"success": False, "error": "File not found"}), 404
+
+    if f.folder_id != target_folder_id:
+        f.folder_id = target_folder_id
+        if is_google_api_configured() and f.drive_file_id and f.source_type == "google_api_upload":
+            try:
+                target_drive_folder = get_or_create_app_folder_in_drive(dest_folder_obj, user=g.current_user) if dest_folder_obj else get_or_create_user_drive_folder(g.current_user)
+                if target_drive_folder:
+                    move_drive_item(f.drive_file_id, target_drive_folder)
+            except Exception as drive_err:
+                print(f"[MOVE FILE] Error moving in Drive: {drive_err}")
+        db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "message": f"Moved '{f.filename}' successfully",
+        "folder_id": target_folder_id
     }), 200
 
 @file_bp.route("/batch-trash", methods=["POST"])

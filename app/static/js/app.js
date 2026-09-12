@@ -193,8 +193,12 @@ document.addEventListener("DOMContentLoaded", () => {
         vaultBreadcrumbs.innerHTML = html;
 
         vaultBreadcrumbs.querySelectorAll(".breadcrumb-item").forEach(item => {
+            const fid = item.getAttribute("data-folder-id");
+            const targetFolderId = (fid === "root") ? null : parseInt(fid);
+            const targetName = item.textContent.trim() || "Vault";
+            setupBreadcrumbDropTarget(item, targetFolderId, targetName);
+
             item.addEventListener("click", () => {
-                const fid = item.getAttribute("data-folder-id");
                 if (fid === "root") {
                     navigateToFolder(null, [{ id: null, name: "Vault" }]);
                 } else {
@@ -305,6 +309,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
             `;
         }).join("");
+
+        // Folder Drop Targets (Drag & Drop Move)
+        foldersGrid.querySelectorAll(".folder-card[data-folder-id]").forEach(card => {
+            const fid = parseInt(card.getAttribute("data-folder-id"));
+            const target = allFolders.find(f => f.id === fid);
+            const fname = target ? target.name : "folder";
+            setupFolderDropTarget(card, fid, fname);
+        });
 
         // Folder Interactions
         foldersGrid.querySelectorAll("[data-open-folder]").forEach(el => {
@@ -509,6 +521,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Clean up any previously teleported file menus from body
         document.querySelectorAll("body > [id^='fileMenu_']").forEach(el => el.remove());
         fileListContainer.className = "files-grid-view";
+        const canDrag = (currentView !== "trash");
         fileListContainer.innerHTML = files.map(file => {
             const isSelected = selectedFileIds.has(file.id);
             const isStarred = file.is_starred;
@@ -516,7 +529,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const cat = (file.category || "other").toLowerCase();
 
             return `
-                <div class="file-card ${isSelected ? 'selected' : ''}" data-id="${file.id}">
+                <div class="file-card ${isSelected ? 'selected' : ''}" data-id="${file.id}" draggable="${canDrag ? 'true' : 'false'}" data-filename="${escapeHtml(file.filename)}">
                     <div class="file-card-header">
                         <div class="card-header-left">
                             <div class="card-select-checkbox">
@@ -570,6 +583,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Clean up any previously teleported file menus from body
         document.querySelectorAll("body > [id^='fileMenu_']").forEach(el => el.remove());
         fileListContainer.className = "files-table-view";
+        const canDrag = (currentView !== "trash");
         fileListContainer.innerHTML = `
             <table class="files-table">
                 <thead>
@@ -588,7 +602,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         const isSelected = selectedFileIds.has(file.id);
                         const isStarred = file.is_starred;
                         return `
-                            <tr class="${isSelected ? 'selected' : ''}" data-id="${file.id}">
+                            <tr class="${isSelected ? 'selected' : ''}" data-id="${file.id}" draggable="${canDrag ? 'true' : 'false'}" data-filename="${escapeHtml(file.filename)}">
                                 <td style="text-align: center;">
                                     <input type="checkbox" class="file-checkbox" data-check-id="${file.id}" ${isSelected ? 'checked' : ''}>
                                 </td>
@@ -636,6 +650,20 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function bindFileEvents() {
+        // Drag & Drop event bindings for file cards and rows
+        fileListContainer.querySelectorAll(".file-card[draggable='true'], .files-table tbody tr[draggable='true']").forEach(el => {
+            const fid = parseInt(el.getAttribute("data-id"));
+            const fname = el.getAttribute("data-filename") || "file";
+
+            el.addEventListener("dragstart", (e) => {
+                handleFileDragStart(e, fid, fname);
+            });
+
+            el.addEventListener("dragend", (e) => {
+                handleFileDragEnd(e);
+            });
+        });
+
         // Multi-select Checkboxes
         fileListContainer.querySelectorAll(".file-checkbox").forEach(chk => {
             chk.addEventListener("change", (e) => {
@@ -1112,6 +1140,211 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    // =========================================================================
+    // DRAG & DROP FILE MOVEMENT SYSTEM (Folder-to-Folder & Root)
+    // =========================================================================
+    let currentDragGhost = null;
+
+    function createDragGhost(count, filename) {
+        if (currentDragGhost) {
+            currentDragGhost.remove();
+        }
+        const badge = document.createElement("div");
+        badge.className = "drag-ghost-badge";
+        badge.innerHTML = `
+            <span>📦</span>
+            <span>${count > 1 ? `Moving ${count} files` : `Moving ${filename}`}</span>
+        `;
+        document.body.appendChild(badge);
+        currentDragGhost = badge;
+        return badge;
+    }
+
+    function removeDragGhost() {
+        if (currentDragGhost) {
+            currentDragGhost.remove();
+            currentDragGhost = null;
+        }
+    }
+
+    function handleFileDragStart(e, fileId, filename) {
+        if (currentView === "trash") {
+            e.preventDefault();
+            return;
+        }
+
+        // If clicking on interactive elements, don't trigger drag
+        if (e.target.closest("button, a, input, .dropdown-menu, .dropdown-wrap, [data-file-star], [data-menu-id]")) {
+            e.preventDefault();
+            return;
+        }
+
+        let idsToMove = [];
+        if (selectedFileIds.has(fileId)) {
+            idsToMove = Array.from(selectedFileIds);
+        } else {
+            idsToMove = [fileId];
+        }
+
+        try {
+            e.dataTransfer.setData("application/vault-file-ids", JSON.stringify(idsToMove));
+            e.dataTransfer.setData("text/plain", JSON.stringify(idsToMove));
+            e.dataTransfer.effectAllowed = "move";
+        } catch (err) {}
+
+        const ghost = createDragGhost(idsToMove.length, filename);
+        if (e.dataTransfer.setDragImage) {
+            e.dataTransfer.setDragImage(ghost, 20, 20);
+        }
+
+        const el = e.currentTarget;
+        el.classList.add("is-dragging");
+        document.body.classList.add("vault-dragging-active");
+
+        // If user is inside a folder, reveal the Root Drop Target zone
+        const rootZone = document.getElementById("rootDropZone");
+        if (rootZone && currentFolderId !== null) {
+            rootZone.classList.remove("hidden");
+        }
+    }
+
+    function handleFileDragEnd(e) {
+        const el = e.currentTarget;
+        if (el) el.classList.remove("is-dragging");
+        document.body.classList.remove("vault-dragging-active");
+        removeDragGhost();
+
+        const rootZone = document.getElementById("rootDropZone");
+        if (rootZone) {
+            rootZone.classList.add("hidden");
+            rootZone.classList.remove("drag-over");
+        }
+
+        document.querySelectorAll(".drag-over").forEach(elem => elem.classList.remove("drag-over"));
+    }
+
+    function setupFolderDropTarget(folderCard, folderId, folderName) {
+        if (!folderCard) return;
+
+        folderCard.addEventListener("dragover", (e) => {
+            if (!e.dataTransfer || !e.dataTransfer.types || !e.dataTransfer.types.includes("application/vault-file-ids")) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            folderCard.classList.add("drag-over");
+        });
+
+        folderCard.addEventListener("dragenter", (e) => {
+            if (!e.dataTransfer || !e.dataTransfer.types || !e.dataTransfer.types.includes("application/vault-file-ids")) return;
+            e.preventDefault();
+            folderCard.classList.add("drag-over");
+        });
+
+        folderCard.addEventListener("dragleave", (e) => {
+            if (!folderCard.contains(e.relatedTarget)) {
+                folderCard.classList.remove("drag-over");
+            }
+        });
+
+        folderCard.addEventListener("drop", async (e) => {
+            if (!e.dataTransfer || !e.dataTransfer.types || !e.dataTransfer.types.includes("application/vault-file-ids")) return;
+            e.preventDefault();
+            e.stopPropagation();
+            folderCard.classList.remove("drag-over");
+            document.body.classList.remove("vault-dragging-active");
+
+            const raw = e.dataTransfer.getData("application/vault-file-ids");
+            if (!raw) return;
+            try {
+                const ids = JSON.parse(raw);
+                if (Array.isArray(ids) && ids.length > 0) {
+                    await moveFilesToFolder(ids, folderId, folderName);
+                }
+            } catch (err) {
+                console.error("Drop JSON parse error:", err);
+            }
+        });
+    }
+
+    function setupBreadcrumbDropTarget(breadcrumbItem, targetFolderId, targetName) {
+        if (!breadcrumbItem) return;
+
+        breadcrumbItem.addEventListener("dragover", (e) => {
+            if (!e.dataTransfer || !e.dataTransfer.types || !e.dataTransfer.types.includes("application/vault-file-ids")) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            breadcrumbItem.classList.add("drag-over");
+        });
+
+        breadcrumbItem.addEventListener("dragenter", (e) => {
+            if (!e.dataTransfer || !e.dataTransfer.types || !e.dataTransfer.types.includes("application/vault-file-ids")) return;
+            e.preventDefault();
+            breadcrumbItem.classList.add("drag-over");
+        });
+
+        breadcrumbItem.addEventListener("dragleave", (e) => {
+            if (!breadcrumbItem.contains(e.relatedTarget)) {
+                breadcrumbItem.classList.remove("drag-over");
+            }
+        });
+
+        breadcrumbItem.addEventListener("drop", async (e) => {
+            if (!e.dataTransfer || !e.dataTransfer.types || !e.dataTransfer.types.includes("application/vault-file-ids")) return;
+            e.preventDefault();
+            e.stopPropagation();
+            breadcrumbItem.classList.remove("drag-over");
+            document.body.classList.remove("vault-dragging-active");
+
+            const raw = e.dataTransfer.getData("application/vault-file-ids");
+            if (!raw) return;
+            try {
+                const ids = JSON.parse(raw);
+                if (Array.isArray(ids) && ids.length > 0) {
+                    await moveFilesToFolder(ids, targetFolderId, targetName);
+                }
+            } catch (err) {
+                console.error("Breadcrumb drop parse error:", err);
+            }
+        });
+    }
+
+    async function moveFilesToFolder(fileIds, targetFolderId, targetName) {
+        if (!fileIds || fileIds.length === 0) return;
+
+        // Skip if dropping into current folder
+        if (targetFolderId === currentFolderId) {
+            window.showToast("Files are already in this location", "info");
+            return;
+        }
+
+        const count = fileIds.length;
+        const destTitle = targetFolderId === null ? "Root Vault" : (targetName || "folder");
+        window.showToast(`Moving ${count} ${count === 1 ? 'file' : 'files'} to ${destTitle}...`, "info");
+
+        try {
+            const res = await fetch("/api/files/batch-move", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    file_ids: fileIds,
+                    folder_id: targetFolderId
+                })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.success) {
+                window.showToast(`✓ Successfully moved ${count} ${count === 1 ? 'file' : 'files'} to ${destTitle}!`, "success");
+                selectedFileIds.clear();
+                updateBatchBar();
+                refreshAll();
+            } else {
+                window.showToast(data.error || "Failed to move files", "error");
+            }
+        } catch (err) {
+            console.error("Move files error:", err);
+            window.showToast("Network connection error", "error");
+        }
+    }
+
     // Move Modal
     async function openMoveModal(fileIds) {
         moveTargetFileIds = fileIds;
@@ -1161,29 +1394,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!checked) return;
 
             const targetFolderId = checked.value === "root" ? null : parseInt(checked.value);
-
-            try {
-                const res = await fetch("/api/files/batch-move", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        file_ids: moveTargetFileIds,
-                        folder_id: targetFolderId
-                    })
-                });
-                const d = await res.json();
-                if (d.success) {
-                    window.showToast(d.message || "Files moved successfully", "success");
-                    moveModal.classList.remove("open");
-                    selectedFileIds.clear();
-                    updateBatchBar();
-                    refreshAll();
-                } else {
-                    window.showToast(d.error || "Failed to move files", "error");
-                }
-            } catch (err) {
-                window.showToast("Move operation failed", "error");
-            }
+            const targetName = checked.value === "root" ? "Root Vault" : "folder";
+            await moveFilesToFolder(moveTargetFileIds, targetFolderId, targetName);
+            moveModal.classList.remove("open");
         });
     }
 
@@ -1251,6 +1464,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         ["dragenter", "dragover"].forEach(event => {
             dropzone.addEventListener(event, (e) => {
+                if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes("application/vault-file-ids")) return;
                 e.preventDefault();
                 dropzone.classList.add("dragover");
             });
@@ -1258,12 +1472,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
         ["dragleave", "drop"].forEach(event => {
             dropzone.addEventListener(event, (e) => {
+                if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes("application/vault-file-ids")) return;
                 e.preventDefault();
                 dropzone.classList.remove("dragover");
             });
         });
 
         dropzone.addEventListener("drop", (e) => {
+            if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes("application/vault-file-ids")) return;
             const files = Array.from(e.dataTransfer.files);
             if (files.length > 0) queueFilesForUpload(files);
         });
@@ -1272,6 +1488,47 @@ document.addEventListener("DOMContentLoaded", () => {
             const files = Array.from(fileInput.files);
             if (files.length > 0) queueFilesForUpload(files);
             fileInput.value = "";
+        });
+    }
+
+    // Dedicated Root Drop Zone (appears when dragging inside a folder)
+    const rootDropZone = document.getElementById("rootDropZone");
+    if (rootDropZone) {
+        rootDropZone.addEventListener("dragover", (e) => {
+            if (!e.dataTransfer || !e.dataTransfer.types || !e.dataTransfer.types.includes("application/vault-file-ids")) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            rootDropZone.classList.add("drag-over");
+        });
+
+        rootDropZone.addEventListener("dragleave", (e) => {
+            if (!rootDropZone.contains(e.relatedTarget)) {
+                rootDropZone.classList.remove("drag-over");
+            }
+        });
+
+        rootDropZone.addEventListener("drop", async (e) => {
+            if (!e.dataTransfer || !e.dataTransfer.types || !e.dataTransfer.types.includes("application/vault-file-ids")) return;
+            e.preventDefault();
+            e.stopPropagation();
+            rootDropZone.classList.remove("drag-over");
+            rootDropZone.classList.add("hidden");
+            document.body.classList.remove("vault-dragging-active");
+
+            const raw = e.dataTransfer.getData("application/vault-file-ids");
+            if (!raw) return;
+            try {
+                const ids = JSON.parse(raw);
+                if (Array.isArray(ids) && ids.length > 0) {
+                    await moveFilesToFolder(ids, null, "Root Vault");
+                }
+            } catch (err) {
+                console.error("Root drop parse error:", err);
+            }
+        });
+
+        rootDropZone.addEventListener("click", () => {
+            navigateToFolder(null, [{ id: null, name: "Vault" }]);
         });
     }
 
