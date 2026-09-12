@@ -12,8 +12,37 @@ document.addEventListener("DOMContentLoaded", () => {
     // Tab buttons
     const adminTabUsersBtn = document.getElementById("adminTabUsersBtn");
     const adminTabFilesBtn = document.getElementById("adminTabFilesBtn");
+    const adminTabTicketsBtn = document.getElementById("adminTabTicketsBtn");
     const adminUsersSection = document.getElementById("adminUsersSection");
     const adminFilesSection = document.getElementById("adminFilesSection");
+    const adminTicketsSection = document.getElementById("adminTicketsSection");
+
+    // Tickets elements
+    const adminTicketsTableBody = document.getElementById("adminTicketsTableBody");
+    const adminTicketSearch = document.getElementById("adminTicketSearch");
+    const adminTicketStatusFilter = document.getElementById("adminTicketStatusFilter");
+    const ticketCountBadge = document.getElementById("ticketCountBadge");
+    const openTicketsBadge = document.getElementById("openTicketsBadge");
+
+    // Ticket Modal elements
+    const adminTicketModal = document.getElementById("adminTicketModal");
+    const closeAdminTicketModalBtn = document.getElementById("closeAdminTicketModalBtn");
+    const cancelAdminTicketModalBtn = document.getElementById("cancelAdminTicketModalBtn");
+    const adminTicketReplyForm = document.getElementById("adminTicketReplyForm");
+    const targetTicketDbId = document.getElementById("targetTicketDbId");
+    const targetTicketUsername = document.getElementById("targetTicketUsername");
+    const previewTicketIdBadge = document.getElementById("previewTicketIdBadge");
+    const previewTicketCategory = document.getElementById("previewTicketCategory");
+    const previewTicketUserBadge = document.getElementById("previewTicketUserBadge");
+    const previewTicketSubject = document.getElementById("previewTicketSubject");
+    const previewTicketMessage = document.getElementById("previewTicketMessage");
+    const adminQuickPassResetCard = document.getElementById("adminQuickPassResetCard");
+    const adminAutoGenerateTicketPassBtn = document.getElementById("adminAutoGenerateTicketPassBtn");
+    const ticketResetNewPassInput = document.getElementById("ticketResetNewPassInput");
+    const applyResetPassToReplyBtn = document.getElementById("applyResetPassToReplyBtn");
+    const adminReplyTextarea = document.getElementById("adminReplyTextarea");
+    const adminTicketStatusSelect = document.getElementById("adminTicketStatusSelect");
+    const adminTicketModalSubtitle = document.getElementById("adminTicketModalSubtitle");
 
     // User table elements
     const usersTableBody = document.getElementById("usersTableBody");
@@ -75,6 +104,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let allUsers = [];
     let allFiles = [];
+    let allTickets = [];
     let selectedFileIds = new Set();
     let userSelectedFileIds = new Set();
     let currentAssignFileIds = [];
@@ -93,16 +123,32 @@ document.addEventListener("DOMContentLoaded", () => {
         adminTabUsersBtn.addEventListener("click", () => {
             adminTabUsersBtn.classList.add("active");
             adminTabFilesBtn.classList.remove("active");
+            if (adminTabTicketsBtn) adminTabTicketsBtn.classList.remove("active");
             adminUsersSection.classList.remove("hidden");
             adminFilesSection.classList.add("hidden");
+            if (adminTicketsSection) adminTicketsSection.classList.add("hidden");
         });
 
         adminTabFilesBtn.addEventListener("click", () => {
             adminTabFilesBtn.classList.add("active");
             adminTabUsersBtn.classList.remove("active");
+            if (adminTabTicketsBtn) adminTabTicketsBtn.classList.remove("active");
             adminFilesSection.classList.remove("hidden");
             adminUsersSection.classList.add("hidden");
+            if (adminTicketsSection) adminTicketsSection.classList.add("hidden");
         });
+
+        if (adminTabTicketsBtn) {
+            adminTabTicketsBtn.addEventListener("click", () => {
+                adminTabTicketsBtn.classList.add("active");
+                adminTabUsersBtn.classList.remove("active");
+                adminTabFilesBtn.classList.remove("active");
+                if (adminTicketsSection) adminTicketsSection.classList.remove("hidden");
+                adminUsersSection.classList.add("hidden");
+                adminFilesSection.classList.add("hidden");
+                loadTickets();
+            });
+        }
     }
 
     // 2. Fetch & Render Admin Data
@@ -137,6 +183,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 updateBatchBar();
                 renderFiles(allFiles);
             }
+
+            // Load support tickets
+            await loadTickets();
         } catch (err) {
             console.error("Admin data load error:", err);
             window.showToast("Failed to load admin metrics", "error");
@@ -880,6 +929,297 @@ document.addEventListener("DOMContentLoaded", () => {
     function escapeHtml(str) {
         if (!str) return "";
         return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    // ==========================================
+    // Help Desk & Support Ticket Administration
+    // ==========================================
+
+    async function loadTickets() {
+        if (!adminTicketsTableBody) return;
+        try {
+            const res = await fetch("/api/admin/tickets");
+            if (res.ok) {
+                const data = await res.json();
+                allTickets = data.tickets || [];
+
+                if (openTicketsBadge) {
+                    if (data.open_count > 0) {
+                        openTicketsBadge.textContent = data.open_count;
+                        openTicketsBadge.style.display = "inline-flex";
+                    } else {
+                        openTicketsBadge.style.display = "none";
+                    }
+                }
+
+                filterAndRenderTickets();
+            }
+        } catch (err) {
+            console.error("Failed to load tickets:", err);
+        }
+    }
+
+    function filterAndRenderTickets() {
+        if (!allTickets) return;
+        const q = (adminTicketSearch ? adminTicketSearch.value.trim().toLowerCase() : "");
+        const statusFilter = (adminTicketStatusFilter ? adminTicketStatusFilter.value.toLowerCase() : "");
+
+        let filtered = allTickets.filter(t => {
+            const matchQuery = !q ||
+                t.ticket_id.toLowerCase().includes(q) ||
+                t.username.toLowerCase().includes(q) ||
+                t.subject.toLowerCase().includes(q) ||
+                t.message.toLowerCase().includes(q);
+
+            const matchStatus = !statusFilter || t.status.toLowerCase() === statusFilter;
+            return matchQuery && matchStatus;
+        });
+
+        renderTickets(filtered);
+    }
+
+    function formatTicketCat(cat) {
+        const map = {
+            "password_reset": "🔑 Password Reset",
+            "account_access": "🔒 Account Access",
+            "file_issue": "📁 File Issue",
+            "bug_issue": "🐛 Bug / Problem",
+            "other": "💬 General"
+        };
+        return map[cat] || cat;
+    }
+
+    function renderTickets(tickets) {
+        if (!adminTicketsTableBody) return;
+        if (ticketCountBadge) {
+            ticketCountBadge.textContent = `${tickets.length} Ticket${tickets.length === 1 ? '' : 's'}`;
+        }
+
+        if (tickets.length === 0) {
+            adminTicketsTableBody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="text-center py-6 text-muted">No support tickets found matching your filter.</td>
+                </tr>
+            `;
+            return;
+        }
+
+        adminTicketsTableBody.innerHTML = tickets.map(t => {
+            const dateStr = t.created_at ? new Date(t.created_at).toLocaleDateString("en-US", { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : "N/A";
+            
+            let statusPill = `<span class="filter-chip" style="background: rgba(245, 158, 11, 0.18); color: #f59e0b; border-color: rgba(245, 158, 11, 0.4);">⏳ Pending</span>`;
+            if (t.status === "resolved") {
+                statusPill = `<span class="filter-chip" style="background: rgba(16, 185, 129, 0.18); color: #10b981; border-color: rgba(16, 185, 129, 0.4);">✓ Resolved</span>`;
+            } else if (t.status === "in_progress") {
+                statusPill = `<span class="filter-chip" style="background: rgba(56, 189, 248, 0.18); color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);">⚡ In Progress</span>`;
+            } else if (t.status === "closed") {
+                statusPill = `<span class="filter-chip" style="background: rgba(148, 163, 184, 0.18); color: #94a3b8; border-color: rgba(148, 163, 184, 0.4);">✕ Closed</span>`;
+            }
+
+            const truncatedMsg = t.message.length > 80 ? escapeHtml(t.message.substring(0, 80)) + "..." : escapeHtml(t.message);
+
+            return `
+                <tr>
+                    <td>
+                        <strong style="color: #38bdf8; font-family: monospace; font-size: 0.9rem;">${escapeHtml(t.ticket_id)}</strong>
+                    </td>
+                    <td>
+                        <div class="user-cell">
+                            <div class="user-avatar-small" style="width: 26px; height: 26px; font-size: 0.75rem;">${t.username[0].toUpperCase()}</div>
+                            <span class="user-cell-name">@${escapeHtml(t.username)}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <span style="font-size: 0.82rem; color: #cbd5e1;">${formatTicketCat(t.category)}</span>
+                    </td>
+                    <td>
+                        <div style="font-weight: 600; color: #f8fafc; font-size: 0.88rem; margin-bottom: 2px;">${escapeHtml(t.subject)}</div>
+                        <div style="font-size: 0.78rem; color: #94a3b8;">${truncatedMsg}</div>
+                        ${t.admin_reply ? `<div style="font-size: 0.75rem; color: #10b981; margin-top: 4px;">↳ <em>Replied</em></div>` : ''}
+                    </td>
+                    <td>${statusPill}</td>
+                    <td class="text-muted" style="font-size: 0.82rem;">${dateStr}</td>
+                    <td class="text-right">
+                        <div class="admin-actions-cell" style="display: flex; gap: 6px; justify-content: flex-end;">
+                            <button type="button" class="btn-primary btn-sm" onclick="window.openAdminTicketModal(${t.id})" style="padding: 5px 10px; font-size: 0.8rem;">
+                                <span>Review & Reply</span>
+                            </button>
+                            <button type="button" class="btn-icon" onclick="window.deleteAdminTicket(${t.id})" title="Delete Ticket" style="color: #f43f5e;">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join("");
+    }
+
+    // Expose ticket modal functions to window
+    window.openAdminTicketModal = async function(ticketId) {
+        try {
+            const res = await fetch(`/api/admin/tickets/${ticketId}`);
+            if (!res.ok) {
+                window.showToast("Failed to fetch ticket details", "error");
+                return;
+            }
+            const data = await res.json();
+            const t = data.ticket;
+
+            if (targetTicketDbId) targetTicketDbId.value = t.id;
+            if (targetTicketUsername) targetTicketUsername.value = t.username;
+            if (previewTicketIdBadge) previewTicketIdBadge.textContent = t.ticket_id;
+            if (previewTicketCategory) previewTicketCategory.textContent = formatTicketCat(t.category);
+            if (previewTicketUserBadge) previewTicketUserBadge.textContent = `@${t.username}`;
+            if (previewTicketSubject) previewTicketSubject.textContent = t.subject;
+            if (previewTicketMessage) previewTicketMessage.textContent = t.message;
+            if (adminReplyTextarea) adminReplyTextarea.value = t.admin_reply || "";
+            if (adminTicketStatusSelect) adminTicketStatusSelect.value = (t.status === "open" ? "resolved" : t.status);
+            if (ticketResetNewPassInput) ticketResetNewPassInput.value = "";
+
+            if (adminQuickPassResetCard) {
+                // Show 1-click password reset especially for password_reset or account issues
+                if (t.category === "password_reset" || t.category === "account_access") {
+                    adminQuickPassResetCard.style.display = "block";
+                } else {
+                    adminQuickPassResetCard.style.display = "block"; // Always handy
+                }
+            }
+
+            if (adminTicketModal) {
+                adminTicketModal.classList.remove("hidden");
+            }
+        } catch (err) {
+            window.showToast("Error opening ticket modal", "error");
+        }
+    };
+
+    window.deleteAdminTicket = async function(ticketId) {
+        if (!confirm("Are you sure you want to delete this support ticket?")) return;
+        try {
+            const res = await fetch(`/api/admin/tickets/${ticketId}`, { method: "DELETE" });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                window.showToast(data.message || "Ticket deleted", "success");
+                loadTickets();
+            } else {
+                window.showToast(data.error || "Failed to delete ticket", "error");
+            }
+        } catch (err) {
+            window.showToast("Network error deleting ticket", "error");
+        }
+    };
+
+    if (closeAdminTicketModalBtn) {
+        closeAdminTicketModalBtn.addEventListener("click", () => {
+            if (adminTicketModal) adminTicketModal.classList.add("hidden");
+        });
+    }
+
+    if (cancelAdminTicketModalBtn) {
+        cancelAdminTicketModalBtn.addEventListener("click", () => {
+            if (adminTicketModal) adminTicketModal.classList.add("hidden");
+        });
+    }
+
+    // Auto-generate password inside ticket reply
+    if (adminAutoGenerateTicketPassBtn && ticketResetNewPassInput) {
+        adminAutoGenerateTicketPassBtn.addEventListener("click", () => {
+            const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*";
+            let randPass = "";
+            for (let i = 0; i < 10; i++) {
+                randPass += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            ticketResetNewPassInput.value = randPass;
+
+            const username = targetTicketUsername.value || "user";
+            if (adminReplyTextarea) {
+                adminReplyTextarea.value = `Hello @${username},\n\nYour account password has been reset as requested.\n\n🔑 Your New Password: ${randPass}\n\nYou can now sign in to your vault using this new password. We recommend updating it upon login.`;
+            }
+            if (adminTicketStatusSelect) adminTicketStatusSelect.value = "resolved";
+        });
+    }
+
+    if (applyResetPassToReplyBtn && ticketResetNewPassInput) {
+        applyResetPassToReplyBtn.addEventListener("click", () => {
+            const pass = ticketResetNewPassInput.value.trim();
+            if (!pass || pass.length < 6) {
+                alert("Please enter or generate a password with at least 6 characters.");
+                return;
+            }
+            const username = targetTicketUsername.value || "user";
+            if (adminReplyTextarea) {
+                adminReplyTextarea.value = `Hello @${username},\n\nYour account password has been reset as requested.\n\n🔑 Your New Password: ${pass}\n\nYou can now sign in to your vault using this new password.`;
+            }
+            if (adminTicketStatusSelect) adminTicketStatusSelect.value = "resolved";
+            window.showToast("Password inserted into reply", "success");
+        });
+    }
+
+    // Ticket Reply Form Submission
+    if (adminTicketReplyForm) {
+        adminTicketReplyForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const ticketId = targetTicketDbId.value;
+            const admin_reply = adminReplyTextarea.value.trim();
+            const status = adminTicketStatusSelect.value;
+            const new_password = ticketResetNewPassInput ? ticketResetNewPassInput.value.trim() : "";
+            const reset_password = Boolean(new_password && new_password.length >= 6);
+
+            const submitBtn = document.getElementById("submitAdminReplyBtn");
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = `<span>Saving...</span>`;
+            }
+
+            try {
+                const res = await fetch(`/api/admin/tickets/${ticketId}/reply`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        admin_reply,
+                        status,
+                        reset_password,
+                        new_password
+                    })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    window.showToast(data.message || "Ticket updated successfully!", "success");
+                    if (adminTicketModal) adminTicketModal.classList.add("hidden");
+                    loadTickets();
+                    // If password was reset, refresh user list as well
+                    if (reset_password) {
+                        const usersRes = await fetch("/api/admin/users");
+                        if (usersRes.ok) {
+                            const uData = await usersRes.json();
+                            allUsers = uData.users || [];
+                            renderUsers(allUsers);
+                        }
+                    }
+                } else {
+                    window.showToast(data.error || "Failed to update ticket", "error");
+                }
+            } catch (err) {
+                window.showToast("Network error updating ticket", "error");
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = `<span>Send Resolution & Update Ticket</span>`;
+                }
+            }
+        });
+    }
+
+    // Filter listeners
+    if (adminTicketSearch) {
+        adminTicketSearch.addEventListener("input", filterAndRenderTickets);
+    }
+    if (adminTicketStatusFilter) {
+        adminTicketStatusFilter.addEventListener("change", filterAndRenderTickets);
     }
 
     // Initial Load

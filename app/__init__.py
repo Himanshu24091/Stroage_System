@@ -28,12 +28,14 @@ def create_app(config_class=Config):
     from app.routes.file_routes import file_bp
     from app.routes.folder_routes import folder_bp
     from app.routes.admin_routes import admin_bp
+    from app.routes.ticket_routes import ticket_bp
 
     app.register_blueprint(view_bp)
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(file_bp, url_prefix="/api/files")
     app.register_blueprint(folder_bp, url_prefix="/api/folders")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
+    app.register_blueprint(ticket_bp, url_prefix="/api/tickets")
 
     # Global Health Check endpoint
     @app.route("/api/health")
@@ -67,7 +69,7 @@ def create_app(config_class=Config):
 
     # Ensure tables are created and schema is migrated
     with app.app_context():
-        from app.utils.db_models import User, Folder, FileItem, SystemNotice, ChunkUploadPart
+        from app.utils.db_models import User, Folder, FileItem, SystemNotice, ChunkUploadPart, SupportTicket
         db.create_all()
 
         # Database Schema Migrations for PostgreSQL / SQLite

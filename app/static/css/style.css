@@ -1670,3 +1670,474 @@ body.vault-dragging-active .breadcrumb-item[data-folder-id] {
     font-family: 'Inter', sans-serif;
 }
 
+/* ==========================================
+   Help Desk & Support Ticket System Styles
+   ========================================== */
+
+.modal-dialog-helpdesk {
+    max-width: 680px;
+    width: 92%;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: radial-gradient(circle at 15% 15%, rgba(14, 165, 233, 0.18), transparent 45%),
+                radial-gradient(circle at 85% 85%, rgba(15, 23, 42, 0.98), #090e1a 100%);
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7), 0 0 35px rgba(56, 189, 248, 0.12);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    max-height: 90vh;
+    animation: modalSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.helpdesk-panel {
+    padding: 24px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.helpdesk-panel.hidden {
+    display: none !important;
+}
+
+.helpdesk-form .form-row-2col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.helpdesk-form .form-group {
+    margin-bottom: 16px;
+}
+
+.helpdesk-form-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.helpdesk-privacy-note {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: #94a3b8;
+    margin: 0;
+    max-width: 320px;
+    line-height: 1.4;
+}
+
+.helpdesk-privacy-note svg {
+    flex-shrink: 0;
+    color: #38bdf8;
+}
+
+/* Ticket Creation Success Box */
+.ticket-success-box {
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    border-radius: 14px;
+    padding: 28px 24px;
+    text-align: center;
+    animation: fadeInDrop 0.3s ease forwards;
+}
+
+.ticket-success-icon {
+    width: 52px;
+    height: 52px;
+    margin: 0 auto 12px auto;
+    border-radius: 50%;
+    background: rgba(16, 185, 129, 0.2);
+    border: 1.5px solid #10b981;
+    color: #10b981;
+    font-size: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.35);
+}
+
+.ticket-success-title {
+    margin: 0 0 6px 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #f8fafc;
+}
+
+.ticket-success-desc {
+    margin: 0 auto 18px auto;
+    font-size: 0.88rem;
+    color: #cbd5e1;
+    max-width: 480px;
+    line-height: 1.5;
+}
+
+.ticket-id-display-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1.5px dashed rgba(56, 189, 248, 0.5);
+    border-radius: 10px;
+    padding: 10px 18px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+.ticket-id-label {
+    font-size: 0.84rem;
+    color: #94a3b8;
+    font-weight: 500;
+}
+
+.ticket-id-badge {
+    font-size: 1.2rem;
+    font-weight: 800;
+    font-family: monospace;
+    letter-spacing: 1.5px;
+    color: #38bdf8;
+    text-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+}
+
+.ticket-success-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+/* Track Search Bar */
+.track-search-bar {
+    padding: 14px 18px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.track-input-group {
+    display: flex;
+    gap: 10px;
+}
+
+.track-input-group input {
+    flex: 1;
+}
+
+.track-empty-state {
+    text-align: center;
+    padding: 36px 20px;
+    color: #94a3b8;
+}
+
+.track-empty-state .empty-icon {
+    font-size: 2.2rem;
+    margin-bottom: 10px;
+}
+
+.track-empty-state .empty-text {
+    max-width: 420px;
+    margin: 0 auto;
+    font-size: 0.88rem;
+    line-height: 1.5;
+}
+
+/* Single Ticket Result Card */
+.ticket-card-view {
+    border-radius: 14px;
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    padding: 20px;
+    margin-bottom: 14px;
+    background: rgba(15, 23, 42, 0.7);
+    animation: fadeInDrop 0.25s ease forwards;
+}
+
+.ticket-view-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.ticket-id-title-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ticket-id-pill {
+    font-family: monospace;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #38bdf8;
+    background: rgba(14, 165, 233, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    padding: 3px 8px;
+    border-radius: 6px;
+}
+
+.ticket-category-pill {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: #cbd5e1;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 3px 8px;
+    border-radius: 6px;
+}
+
+.ticket-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 20px;
+}
+
+.ticket-status-badge.status-open {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.ticket-status-badge.status-inprogress {
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+.ticket-status-badge.status-resolved {
+    background: rgba(16, 185, 129, 0.18);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.45);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+}
+
+.ticket-status-badge.status-closed {
+    background: rgba(148, 163, 184, 0.15);
+    color: #94a3b8;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.ticket-view-meta {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 0.8rem;
+    color: #94a3b8;
+    margin-bottom: 14px;
+}
+
+.meta-item .meta-lbl {
+    color: #64748b;
+    margin-right: 4px;
+}
+
+.ticket-view-body {
+    background: rgba(10, 15, 29, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+}
+
+.ticket-subject-heading {
+    margin: 0 0 6px 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #f8fafc;
+}
+
+.ticket-message-text {
+    font-size: 0.85rem;
+    color: #cbd5e1;
+    white-space: pre-wrap;
+    line-height: 1.5;
+}
+
+/* Extracted Password Card */
+.extracted-pass-card {
+    background: rgba(16, 185, 129, 0.12);
+    border: 1.5px solid rgba(16, 185, 129, 0.45);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.15);
+}
+
+.pass-info-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.pass-title {
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: #10b981;
+}
+
+.pass-code {
+    font-family: monospace;
+    font-size: 1.05rem;
+    font-weight: 700;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 3px 8px;
+    border-radius: 6px;
+    color: #fff;
+    letter-spacing: 1px;
+}
+
+.pass-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* Admin Reply Box */
+.ticket-admin-reply-box {
+    border-radius: 10px;
+    padding: 14px;
+    transition: all 0.2s ease;
+}
+
+.ticket-admin-reply-box.has-reply {
+    background: rgba(14, 165, 233, 0.08);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.1);
+}
+
+.ticket-admin-reply-box.pending-reply {
+    background: rgba(245, 158, 11, 0.06);
+    border: 1px dashed rgba(245, 158, 11, 0.3);
+}
+
+.reply-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.reply-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #38bdf8;
+}
+
+.reply-time {
+    font-size: 0.75rem;
+    color: #64748b;
+}
+
+.reply-message-body {
+    margin: 0;
+    font-size: 0.88rem;
+    color: #f1f5f9;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.reply-pending-text {
+    margin: 0;
+    font-size: 0.84rem;
+    color: #f59e0b;
+    line-height: 1.5;
+}
+
+/* Multiple Tickets List */
+.user-ticket-row {
+    padding: 12px 16px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    margin-bottom: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    transition: all 0.2s ease;
+}
+
+.user-ticket-row:hover {
+    border-color: rgba(56, 189, 248, 0.4);
+    background: rgba(14, 165, 233, 0.08);
+    transform: translateX(3px);
+}
+
+.row-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.row-cat-text {
+    font-size: 0.78rem;
+    color: #94a3b8;
+}
+
+.row-date-text {
+    font-size: 0.75rem;
+    color: #64748b;
+}
+
+.row-subject {
+    font-size: 0.88rem;
+    color: #f8fafc;
+    font-weight: 500;
+}
+
+.row-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Real-Time Registration Username Availability Indicator */
+.field-feedback-status {
+    transition: all 0.2s ease;
+    font-size: 0.8rem;
+    line-height: 1.3;
+}
+
+.field-feedback-status.hidden {
+    display: none !important;
+}
+
+@media (max-width: 640px) {
+    .helpdesk-form .form-row-2col {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+    
+    .ticket-id-display-wrapper {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .extracted-pass-card {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+

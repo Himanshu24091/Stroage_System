@@ -1,7 +1,9 @@
 import os
+from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, g
+from sqlalchemy import func
 from app import db
-from app.utils.db_models import User, FileItem, SystemNotice
+from app.utils.db_models import User, FileItem, SystemNotice, SupportTicket
 from app.utils.auth_guard import require_admin
 
 admin_bp = Blueprint("admin_bp", __name__)
@@ -274,4 +276,128 @@ def trigger_drive_migration():
             "success": False,
             "error": f"Migration failed: {str(e)}"
         }), 500
+
+
+# ==========================================
+# Help Desk & Support Ticket Administration
+# ==========================================
+
+@admin_bp.route("/tickets", methods=["GET"])
+@require_admin
+def list_tickets():
+    """Admin retrieves all support tickets with counts and status filtering"""
+    status = request.args.get("status", "").strip().lower()
+    query = SupportTicket.query
+
+    if status and status in ("open", "in_progress", "resolved", "closed"):
+        query = query.filter_by(status=status)
+
+    tickets = query.order_by(SupportTicket.created_at.desc()).all()
+    open_count = SupportTicket.query.filter(SupportTicket.status.in_(["open", "in_progress"])).count()
+    resolved_count = SupportTicket.query.filter_by(status="resolved").count()
+
+    return jsonify({
+        "success": True,
+        "count": len(tickets),
+        "open_count": open_count,
+        "resolved_count": resolved_count,
+        "tickets": [t.to_dict() for t in tickets]
+    }), 200
+
+@admin_bp.route("/tickets/<int:ticket_id_num>", methods=["GET"])
+@require_admin
+def get_ticket_details(ticket_id_num):
+    """Admin views full details for a specific support ticket"""
+    ticket = SupportTicket.query.get_or_404(ticket_id_num)
+    linked_user = None
+    if ticket.user_id:
+        linked_user = User.query.get(ticket.user_id)
+    if not linked_user and ticket.username:
+        linked_user = User.query.filter(func.lower(User.username) == ticket.username.lower()).first()
+
+    data = ticket.to_dict()
+    data["user_found"] = linked_user is not None
+    if linked_user:
+        data["linked_user"] = {
+            "id": linked_user.id,
+            "username": linked_user.username,
+            "email": linked_user.email,
+            "total_files": linked_user.total_file_count,
+            "created_at": linked_user.created_at.isoformat() if linked_user.created_at else None
+        }
+
+    return jsonify({
+        "success": True,
+        "ticket": data
+    }), 200
+
+@admin_bp.route("/tickets/<int:ticket_id_num>/reply", methods=["POST"])
+@require_admin
+def reply_ticket(ticket_id_num):
+    """
+    Admin responds to a ticket, updates status, and optionally resets the user's password.
+    """
+    ticket = SupportTicket.query.get_or_404(ticket_id_num)
+    payload = request.get_json() or {}
+
+    admin_reply = str(payload.get("admin_reply", "")).strip()
+    status = str(payload.get("status", "resolved")).strip().lower()
+    reset_password = bool(payload.get("reset_password", False))
+    new_password = str(payload.get("new_password", "")).strip()
+
+    if status not in ("open", "in_progress", "resolved", "closed"):
+        status = "resolved"
+
+    password_reset_notice = ""
+    # If admin chooses to reset user password as part of resolution
+    if reset_password and new_password:
+        if len(new_password) < 6:
+            return jsonify({"success": False, "error": "New password must be at least 6 characters"}), 400
+
+        target_user = None
+        if ticket.user_id:
+            target_user = User.query.get(ticket.user_id)
+        if not target_user and ticket.username:
+            target_user = User.query.filter(func.lower(User.username) == ticket.username.lower()).first()
+
+        if target_user:
+            target_user.set_password(new_password)
+            password_reset_notice = f"\n\n[PASSWORD RESET] Your password has been reset to: {new_password}\nYou can now sign in using this new password."
+        else:
+            return jsonify({"success": False, "error": f"No user account found matching username '{ticket.username}' to reset password"}), 404
+
+    # Build final admin reply
+    full_reply = admin_reply
+    if password_reset_notice and new_password not in full_reply:
+        full_reply = (full_reply + password_reset_notice).strip()
+
+    ticket.admin_reply = full_reply if full_reply else "Your issue has been reviewed and resolved by the administrator."
+    ticket.status = status
+    ticket.admin_id = getattr(g.current_user, "id", 0)
+
+    if status in ("resolved", "closed"):
+        ticket.resolved_at = datetime.now(timezone.utc)
+
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "message": f"Ticket {ticket.ticket_id} updated successfully!",
+        "ticket": ticket.to_dict()
+    }), 200
+
+@admin_bp.route("/tickets/<int:ticket_id_num>", methods=["DELETE"])
+@require_admin
+def delete_ticket(ticket_id_num):
+    """Admin deletes an obsolete or spam ticket"""
+    ticket = SupportTicket.query.get_or_404(ticket_id_num)
+    ticket_id = ticket.ticket_id
+    db.session.delete(ticket)
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "message": f"Ticket '{ticket_id}' deleted successfully"
+    }), 200
+
 

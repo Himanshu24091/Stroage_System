@@ -1,0 +1,146 @@
+<!-- Modal: Help Desk & Support Ticket System -->
+<div id="helpDeskModal" class="modal-backdrop" role="dialog" aria-modal="true" style="display: none;">
+    <div class="modal-dialog modal-dialog-helpdesk glass-panel">
+        <!-- Modal Header -->
+        <div class="modal-header guide-modal-header">
+            <div class="guide-header-left">
+                <div class="guide-badge-glow" style="background: rgba(14, 165, 233, 0.18); color: #38bdf8; border-color: rgba(56, 189, 248, 0.35);">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        <circle cx="12" cy="11" r="1"></circle>
+                        <path d="M12 7h.01"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="guide-modal-title">Help Desk & Support Center</h3>
+                    <p class="guide-modal-subtitle">Submit requests to admin & track resolutions in real-time with your Ticket ID</p>
+                </div>
+            </div>
+            <button type="button" class="btn-icon close-btn" onclick="closeHelpDeskModal()" title="Close Help Desk">✕</button>
+        </div>
+
+        <!-- Modal Body with Tabs -->
+        <div class="modal-body guide-modal-body">
+            <!-- Navigation Tabs -->
+            <div class="guide-tab-nav" role="tablist">
+                <button type="button" id="helpTabRaiseBtn" class="guide-tab-btn active" onclick="switchHelpDeskTab('raise')" role="tab">
+                    <span class="tab-icon">🎫</span>
+                    <span>Raise a Ticket</span>
+                </button>
+                <button type="button" id="helpTabTrackBtn" class="guide-tab-btn" onclick="switchHelpDeskTab('track')" role="tab">
+                    <span class="tab-icon">🔍</span>
+                    <span>Track Ticket Status</span>
+                </button>
+            </div>
+
+            <!-- Tab 1: Raise Ticket Form -->
+            <div id="helpDeskPanel_raise" class="helpdesk-panel active">
+                <div id="ticketSubmitSuccessCard" class="ticket-success-box hidden">
+                    <div class="ticket-success-icon">✓</div>
+                    <h4 class="ticket-success-title">Ticket Created Successfully!</h4>
+                    <p class="ticket-success-desc">Please save your unique <strong>Ticket ID</strong> below. You will use it to track administrator response and password updates.</p>
+                    
+                    <div class="ticket-id-display-wrapper">
+                        <span class="ticket-id-label">Your Ticket ID:</span>
+                        <div class="ticket-id-badge" id="newTicketIdBadge">TK-00000</div>
+                        <button type="button" class="btn-secondary btn-sm" id="copyNewTicketIdBtn" onclick="copyGeneratedTicketId()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                            <span>Copy ID</span>
+                        </button>
+                    </div>
+
+                    <div class="ticket-success-actions">
+                        <button type="button" class="btn-primary" onclick="goToTrackTicketWithId()">
+                            <span>Track Status of This Ticket</span>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                        </button>
+                        <button type="button" class="btn-ghost" onclick="resetRaiseTicketForm()">
+                            <span>Submit Another Ticket</span>
+                        </button>
+                    </div>
+                </div>
+
+                <form id="raiseTicketForm" class="helpdesk-form">
+                    <div class="form-row-2col">
+                        <div class="form-group">
+                            <label for="ticketUsername" class="form-label">Your Username <span class="text-danger">*</span></label>
+                            <div class="input-icon-wrapper">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                    <circle cx="12" cy="7" r="4"/>
+                                </svg>
+                                <input type="text" id="ticketUsername" class="form-input with-icon" placeholder="Enter your registered username" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ticketCategory" class="form-label">Issue Category <span class="text-danger">*</span></label>
+                            <div class="input-icon-wrapper">
+                                <select id="ticketCategory" class="form-input" style="padding-left: 12px; appearance: auto;" required>
+                                    <option value="password_reset">🔑 Password Reset Request</option>
+                                    <option value="account_access">🔒 Account Login Issue</option>
+                                    <option value="file_issue">📁 File Storage / Access Issue</option>
+                                    <option value="bug_issue">🐛 Bug / Technical Problem</option>
+                                    <option value="other">💬 General Inquiry</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="ticketSubject" class="form-label">Subject / Short Summary <span class="text-danger">*</span></label>
+                        <input type="text" id="ticketSubject" class="form-input" placeholder="e.g., Forgot my account password, please reset" maxlength="255" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="ticketMessage" class="form-label">Detailed Description <span class="text-danger">*</span></label>
+                        <textarea id="ticketMessage" class="form-input form-textarea" rows="4" placeholder="Explain the problem or requirement in detail so the admin can assist you promptly..." required></textarea>
+                    </div>
+
+                    <div id="ticketSubmitError" class="auth-error hidden" style="margin-bottom: 14px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <span id="ticketSubmitErrorText">Failed to submit ticket</span>
+                    </div>
+
+                    <div class="helpdesk-form-footer">
+                        <p class="helpdesk-privacy-note">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                            <span>No phone or email required. You can track this ticket anytime using your generated Ticket ID.</span>
+                        </p>
+                        <button type="submit" id="submitTicketBtn" class="btn-primary">
+                            <span>Submit Support Ticket</span>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Tab 2: Track Ticket Status -->
+            <div id="helpDeskPanel_track" class="helpdesk-panel hidden">
+                <div class="track-search-bar glass-panel">
+                    <div class="track-input-group">
+                        <input type="text" id="trackTicketInput" class="form-input" placeholder="Enter Ticket ID (e.g., TK-48291) or your Username" autocomplete="off">
+                        <button type="button" id="trackTicketBtn" class="btn-primary" onclick="performTrackTicket()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            <span>Track Status</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Track Result Display Area -->
+                <div id="trackResultContainer" class="track-result-container hidden">
+                    <!-- Dynamic Ticket Card Content -->
+                </div>
+
+                <!-- Track Empty / Error State -->
+                <div id="trackEmptyState" class="track-empty-state">
+                    <div class="empty-icon">🔍</div>
+                    <p class="empty-text">Enter your <strong>Ticket ID</strong> above to view status, administrator responses, or updated login credentials.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

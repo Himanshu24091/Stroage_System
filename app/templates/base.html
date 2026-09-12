@@ -80,6 +80,16 @@
                 </a>
 
                 <div class="nav-actions">
+                    <!-- Help Desk / Support Ticket Button -->
+                    <button type="button" id="helpDeskNavBtn" class="btn-guide-nav" onclick="openHelpDeskModal()" title="Help Desk & Support Tickets">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                            <circle cx="12" cy="11" r="1"></circle>
+                            <path d="M12 7h.01"></path>
+                        </svg>
+                        <span>Help Desk</span>
+                    </button>
+
                     <!-- Instruction / Guide Button -->
                     <button type="button" id="instructionsNavBtn" class="btn-guide-nav" onclick="openInstructionsModal()" title="How to use StealthVault">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -311,8 +321,11 @@
         });
     </script>
 
-    <!-- Include Instructions Modal -->
+    <!-- Include Help Desk & Instructions Modals -->
+    {% include "helpdesk_modal.html" %}
     {% include "instructions_modal.html" %}
+
+    <script src="{{ url_for('static', filename='js/helpdesk.js') }}"></script>
 
     <!-- Local In-Browser Document & Spreadsheet Engines -->
     <script src="{{ url_for('static', filename='vendor/pdfjs/pdf.min.js') }}"></script>

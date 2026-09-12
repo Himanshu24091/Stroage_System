@@ -68,6 +68,14 @@
                 </div>
             </div>
 
+            <!-- Help Desk Forgot Password Link -->
+            <div class="auth-helper-row" style="display: flex; justify-content: flex-end; margin-top: -6px; margin-bottom: 14px;">
+                <a href="javascript:void(0)" onclick="openHelpDeskModal('password_reset')" class="text-cyan auth-link-sm" style="font-size: 0.82rem; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                    <span>Forgot password or need help? Open Help Desk</span>
+                </a>
+            </div>
+
             <div id="loginErrorMessage" class="auth-error hidden">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10" />
@@ -96,7 +104,12 @@
                         <circle cx="12" cy="7" r="4" />
                     </svg>
                     <input type="text" id="regUsername" class="form-input with-icon"
-                        placeholder="Choose username (e.g. User)" minlength="3" required>
+                        placeholder="Choose username (e.g. User)" minlength="3" maxlength="30" autocomplete="off" required>
+                </div>
+                <!-- Real-time username availability indicator -->
+                <div id="regUsernameFeedback" class="field-feedback-status hidden" style="font-size: 0.8rem; margin-top: 5px; display: flex; align-items: center; gap: 6px;">
+                    <span id="regUsernameFeedbackIcon"></span>
+                    <span id="regUsernameFeedbackText"></span>
                 </div>
             </div>
 

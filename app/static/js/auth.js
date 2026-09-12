@@ -105,6 +105,73 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    // Real-Time Registration Username Availability Checker
+    let usernameCheckTimeout = null;
+    let isUsernameAvailable = false;
+
+    if (regUsername) {
+        const feedbackBox = document.getElementById("regUsernameFeedback");
+        const feedbackIcon = document.getElementById("regUsernameFeedbackIcon");
+        const feedbackText = document.getElementById("regUsernameFeedbackText");
+
+        regUsername.addEventListener("input", () => {
+            const rawVal = regUsername.value.trim();
+            clearTimeout(usernameCheckTimeout);
+
+            if (!rawVal) {
+                if (feedbackBox) feedbackBox.classList.add("hidden");
+                regUsername.style.borderColor = "";
+                isUsernameAvailable = false;
+                return;
+            }
+
+            if (rawVal.length < 3) {
+                if (feedbackBox) {
+                    feedbackBox.classList.remove("hidden");
+                    feedbackBox.style.color = "#f59e0b"; // Amber warning
+                    feedbackIcon.innerHTML = "⏳";
+                    feedbackText.textContent = "Username must be at least 3 characters";
+                }
+                regUsername.style.borderColor = "#f59e0b";
+                isUsernameAvailable = false;
+                return;
+            }
+
+            // Debounced availability check
+            if (feedbackBox) {
+                feedbackBox.classList.remove("hidden");
+                feedbackBox.style.color = "#94a3b8";
+                feedbackIcon.innerHTML = `<span class="spinner-inline" style="width: 12px; height: 12px; display: inline-block;"></span>`;
+                feedbackText.textContent = "Checking availability...";
+            }
+
+            usernameCheckTimeout = setTimeout(async () => {
+                try {
+                    const res = await fetch(`/api/auth/check-username?username=${encodeURIComponent(rawVal)}`);
+                    const data = await res.json();
+
+                    if (!feedbackBox) return;
+
+                    if (data.available) {
+                        feedbackBox.style.color = "#10b981"; // Vibrant Emerald
+                        feedbackIcon.innerHTML = "✓";
+                        feedbackText.textContent = data.message || `'${rawVal}' is available!`;
+                        regUsername.style.borderColor = "#10b981";
+                        isUsernameAvailable = true;
+                    } else {
+                        feedbackBox.style.color = "#f43f5e"; // Vibrant Rose/Red
+                        feedbackIcon.innerHTML = "✕";
+                        feedbackText.textContent = data.message || `'${rawVal}' is already taken`;
+                        regUsername.style.borderColor = "#f43f5e";
+                        isUsernameAvailable = false;
+                    }
+                } catch (e) {
+                    isUsernameAvailable = true;
+                }
+            }, 280);
+        });
+    }
+
     // 4. Register Submission
     if (registerForm) {
         registerForm.addEventListener("submit", async (e) => {
@@ -114,6 +181,13 @@ document.addEventListener("DOMContentLoaded", () => {
             const password = regPassword.value.trim();
 
             if (!username || !email || !password) return;
+
+            if (!isUsernameAvailable) {
+                regErrorText.textContent = "Username is already taken or invalid. Please pick an available username.";
+                regErrorMessage.classList.remove("hidden");
+                regUsername.focus();
+                return;
+            }
 
             registerSubmitBtn.disabled = true;
             registerSubmitBtn.innerHTML = `<span>Creating vault...</span>`;

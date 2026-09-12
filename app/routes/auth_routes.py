@@ -1,10 +1,50 @@
+import re
 from flask import Blueprint, request, jsonify, session, g
+from sqlalchemy import func
 from app import db
 from app.utils.db_models import User
 from app.utils.auth_guard import require_login
 from config import Config
 
 auth_bp = Blueprint("auth_bp", __name__)
+
+@auth_bp.route("/check-username", methods=["GET"])
+def check_username():
+    """
+    Real-time username availability check during registration.
+    Returns whether the username is valid and not already registered in the database.
+    """
+    raw_username = request.args.get("username", "").strip()
+    if not raw_username:
+        return jsonify({"success": True, "available": False, "valid": False, "message": "Username is required"}), 200
+
+    if len(raw_username) < 3:
+        return jsonify({"success": True, "available": False, "valid": False, "message": "Username must be at least 3 characters"}), 200
+
+    if len(raw_username) > 30:
+        return jsonify({"success": True, "available": False, "valid": False, "message": "Username cannot exceed 30 characters"}), 200
+
+    if not re.match(r"^[a-zA-Z0-9_\.\-]+$", raw_username):
+        return jsonify({"success": True, "available": False, "valid": False, "message": "Letters, numbers, '.', '_' and '-' only (no spaces)"}), 200
+
+    # Case-insensitive collision check against all users
+    existing = User.query.filter(func.lower(User.username) == raw_username.lower()).first()
+    if existing:
+        return jsonify({
+            "success": True,
+            "available": False,
+            "valid": True,
+            "username": raw_username,
+            "message": f"Username '{raw_username}' is already taken"
+        }), 200
+
+    return jsonify({
+        "success": True,
+        "available": True,
+        "valid": True,
+        "username": raw_username,
+        "message": f"Username '{raw_username}' is available!"
+    }), 200
 
 @auth_bp.route("/register", methods=["POST"])
 def register():
@@ -17,17 +57,20 @@ def register():
     if not username or len(username) < 3:
         return jsonify({"success": False, "error": "Username must be at least 3 characters"}), 400
 
+    if len(username) > 30 or not re.match(r"^[a-zA-Z0-9_\.\-]+$", username):
+        return jsonify({"success": False, "error": "Username can only contain letters, numbers, '.', '_' and '-'"}), 400
+
     if not email or "@" not in email:
         return jsonify({"success": False, "error": "Valid email address is required"}), 400
 
     if not password or len(password) < 6:
         return jsonify({"success": False, "error": "Password must be at least 6 characters"}), 400
 
-    # Check for existing username or email
-    if User.query.filter_by(username=username).first():
-        return jsonify({"success": False, "error": "Username is already taken"}), 400
+    # Case-insensitive check for existing username or email
+    if User.query.filter(func.lower(User.username) == username.lower()).first():
+        return jsonify({"success": False, "error": f"Username '{username}' is already taken. Please choose another."}), 400
 
-    if User.query.filter_by(email=email).first():
+    if User.query.filter(func.lower(User.email) == email.lower()).first():
         return jsonify({"success": False, "error": "Email is already registered"}), 400
 
     # Normal users are NEVER admins

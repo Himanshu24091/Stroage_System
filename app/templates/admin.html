@@ -94,6 +94,15 @@
             </svg>
             <span>All Vault Files & Legacy Uploads</span>
         </button>
+        <button id="adminTabTicketsBtn" class="pill-btn" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="11" r="1"></circle>
+                <path d="M12 7h.01"></path>
+            </svg>
+            <span>Help Desk & Tickets</span>
+            <span id="openTicketsBadge" class="filter-chip" style="margin-left: 6px; background: rgba(244, 63, 94, 0.25); color: #fca5a5; border-color: rgba(244, 63, 94, 0.5); display: none;">0</span>
+        </button>
     </div>
 
     <!-- TAB 1: USER MANAGEMENT -->
@@ -203,6 +212,50 @@
             </table>
         </div>
     </section>
+
+    <!-- TAB 3: HELP DESK & SUPPORT TICKETS -->
+    <section id="adminTicketsSection" class="glass-panel admin-table-card hidden">
+        <div class="admin-table-toolbar">
+            <div class="search-box admin-search-box">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input type="text" id="adminTicketSearch" placeholder="Filter tickets by ID, username or subject...">
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <select id="adminTicketStatusFilter" class="form-input" style="width: auto; padding: 6px 12px; font-size: 0.85rem; height: 36px; appearance: auto;">
+                    <option value="">All Statuses</option>
+                    <option value="open">Pending Review</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="closed">Closed</option>
+                </select>
+                <span id="ticketCountBadge" class="filter-chip active">0 Tickets</span>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="custom-table">
+                <thead>
+                    <tr>
+                        <th style="width: 110px;">Ticket ID</th>
+                        <th style="width: 140px;">Username</th>
+                        <th style="width: 150px;">Category</th>
+                        <th>Subject & Issue Description</th>
+                        <th style="width: 120px;">Status</th>
+                        <th style="width: 130px;">Submitted</th>
+                        <th class="text-right" style="width: 130px;">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="adminTicketsTableBody">
+                    <tr>
+                        <td colspan="7" class="text-center py-6 text-muted">Loading support tickets...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
 </div>
 
 <!-- Password Reset Modal -->
@@ -263,6 +316,84 @@
                 <button type="button" id="cancelResetBtn" class="btn-secondary">Cancel</button>
                 <button type="submit" id="confirmResetBtn" class="btn-primary">
                     <span>Save & Update Password</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Admin Help Desk Ticket Review & Reply Modal -->
+<div id="adminTicketModal" class="modal-overlay hidden">
+    <div class="modal-card glass-panel" style="max-width: 620px;">
+        <div class="modal-header">
+            <div class="modal-icon-wrapper cyan">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    <circle cx="12" cy="11" r="1"></circle>
+                    <path d="M12 7h.01"></path>
+                </svg>
+            </div>
+            <div>
+                <h3 class="modal-title" id="adminTicketModalTitle">Review Support Ticket</h3>
+                <p id="adminTicketModalSubtitle" class="modal-subtitle">Submitted by user</p>
+            </div>
+            <button id="closeAdminTicketModalBtn" class="modal-close-btn">&times;</button>
+        </div>
+
+        <form id="adminTicketReplyForm" class="modal-body">
+            <input type="hidden" id="targetTicketDbId">
+            <input type="hidden" id="targetTicketUsername">
+
+            <!-- Ticket details preview -->
+            <div class="ticket-preview-box" style="background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 10px; padding: 14px; margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <span id="previewTicketIdBadge" class="ticket-id-pill" style="font-size: 0.85rem; font-weight: 700;">TK-00000</span>
+                        <span id="previewTicketCategory" class="ticket-category-pill">Password Reset</span>
+                    </div>
+                    <span id="previewTicketUserBadge" style="font-size: 0.82rem; color: #38bdf8; font-weight: 600;">@username</span>
+                </div>
+                <h4 id="previewTicketSubject" style="margin: 6px 0 4px 0; font-size: 0.95rem; color: #f8fafc; font-weight: 600;">Subject</h4>
+                <p id="previewTicketMessage" style="margin: 0; font-size: 0.85rem; color: #cbd5e1; white-space: pre-wrap; line-height: 1.5;"></p>
+            </div>
+
+            <!-- Password Reset Helper (Active for Password Reset Requests) -->
+            <div id="adminQuickPassResetCard" class="admin-quick-pass-box" style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 0.85rem; font-weight: 600; color: #f59e0b;">🔑 1-Click Password Reset for this User</span>
+                    <button type="button" id="adminAutoGenerateTicketPassBtn" class="btn-secondary btn-sm" style="padding: 4px 10px; font-size: 0.78rem;">
+                        <span>⚡ Auto-Generate</span>
+                    </button>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="ticketResetNewPassInput" class="form-input" placeholder="Type or auto-generate new password (min 6 chars)">
+                        <button type="button" id="applyResetPassToReplyBtn" class="btn-primary btn-sm" style="white-space: nowrap;">
+                            <span>Set & Insert in Reply</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="adminReplyTextarea" class="form-label">Administrator Reply / Resolution Note <span class="text-danger">*</span></label>
+                <textarea id="adminReplyTextarea" class="form-input form-textarea" rows="4" placeholder="Enter resolution message to user (visible when they track this Ticket ID)..." required></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="adminTicketStatusSelect" class="form-label">Update Ticket Status</label>
+                <select id="adminTicketStatusSelect" class="form-input" style="appearance: auto;">
+                    <option value="resolved">✓ Resolved (Problem Solved / Password Updated)</option>
+                    <option value="in_progress">⚡ In Progress (Under Active Review)</option>
+                    <option value="closed">✕ Closed</option>
+                    <option value="open">⏳ Pending Review</option>
+                </select>
+            </div>
+
+            <div class="modal-footer" style="padding: 0; margin-top: 16px; border: none; display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" id="cancelAdminTicketModalBtn" class="btn-secondary">Cancel</button>
+                <button type="submit" id="submitAdminReplyBtn" class="btn-primary">
+                    <span>Send Resolution & Update Ticket</span>
                 </button>
             </div>
         </form>

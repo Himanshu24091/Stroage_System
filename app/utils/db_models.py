@@ -282,3 +282,48 @@ class ChunkUploadPart(db.Model):
             "drive_file_id": self.drive_file_id,
             "part_size": self.part_size,
         }
+
+
+class SupportTicket(db.Model):
+    """
+    Help Desk Support Ticket model for user inquiries, issues, and password reset requests.
+    Identified strictly by username and unique ticket_id (no email/phone required).
+    """
+    __tablename__ = "support_tickets"
+
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.String(32), unique=True, nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    username = db.Column(db.String(64), nullable=False, index=True)
+    category = db.Column(db.String(50), nullable=False, default="password_reset")  # password_reset, account_access, file_issue, bug_issue, other
+    subject = db.Column(db.String(255), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(32), default="open", index=True)  # open, in_progress, resolved, closed
+    admin_reply = db.Column(db.Text, nullable=True)
+    admin_id = db.Column(db.Integer, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    resolved_at = db.Column(db.DateTime, nullable=True)
+
+    # Relationships
+    user = db.relationship("User", backref=db.backref("tickets", lazy="dynamic"))
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "ticket_id": self.ticket_id,
+            "user_id": self.user_id,
+            "username": self.username,
+            "category": self.category,
+            "subject": self.subject,
+            "message": self.message,
+            "status": self.status,
+            "admin_reply": self.admin_reply,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None
+        }
+
