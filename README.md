@@ -157,5 +157,15 @@ If you want files to upload directly into your Google Drive:
 
 ---
 
+## 🔑 Google Drive OAuth Token Maintenance
+
+If file uploads ever fail with `invalid_grant` or token expired error:
+- Run: `.\venv\Scripts\python get_oauth_token.py`
+- Copy the newly generated token to Railway (`GOOGLE_REFRESH_TOKEN`).
+- Detailed guide: See [GOOGLE_DRIVE_TOKEN_GUIDE.md](GOOGLE_DRIVE_TOKEN_GUIDE.md).
+
+---
+
 ## 📄 License
 MIT License. Free for personal and commercial usage.
+
