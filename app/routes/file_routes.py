@@ -1274,10 +1274,19 @@ def storage_stats():
     total_files = FileItem.query.filter_by(user_id=g.current_user.id).count()
     total_bytes = db.session.query(db.func.sum(FileItem.file_size)).filter(FileItem.user_id == g.current_user.id).scalar() or 0
 
+    drive_metrics = None
     if is_google_api_configured():
-        drive_metrics = get_storage_quota()
+        try:
+            drive_metrics = get_storage_quota()
+        except Exception as e:
+            print(f"[STORAGE STATS GOOGLE API ERROR]: {e}")
+            drive_metrics = {"success": False, "error": str(e), "auth_expired": True}
     else:
-        drive_metrics = get_storage_stats_from_gas()
+        try:
+            drive_metrics = get_storage_stats_from_gas()
+        except Exception as e:
+            print(f"[STORAGE STATS GAS ERROR]: {e}")
+            drive_metrics = None
 
     return jsonify({
         "success": True,

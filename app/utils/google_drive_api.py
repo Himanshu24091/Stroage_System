@@ -50,6 +50,12 @@ def get_access_token() -> str:
             resp = requests.post(token_url, data=payload, timeout=15)
             if resp.status_code != 200:
                 print(f"[GOOGLE API AUTH ERROR] Status {resp.status_code}: {resp.text}")
+                if "invalid_grant" in resp.text:
+                    raise Exception(
+                        "Google OAuth token expired or revoked (invalid_grant). "
+                        "Please run 'python get_oauth_token.py' to generate a new token, "
+                        "update GOOGLE_REFRESH_TOKEN in Railway, and ensure OAuth consent screen is 'In production'."
+                    )
                 raise Exception(f"Failed to refresh Google OAuth token: {resp.text}")
 
             data = resp.json()
@@ -79,7 +85,16 @@ def initiate_resumable_upload(filename: str, mime_type: str, total_size: int, fo
     Returns the unique resumable upload location URI.
     """
     target_folder = folder_id or Config.GOOGLE_DRIVE_FOLDER_ID
-    headers = get_auth_headers()
+    try:
+        headers = get_auth_headers()
+    except Exception as auth_err:
+        print(f"[GOOGLE DRIVE RESUMABLE ERROR] Auth failure: {auth_err}")
+        return {
+            "success": False,
+            "error": str(auth_err),
+            "auth_expired": True
+        }
+
     headers.update({
         "X-Upload-Content-Type": mime_type or "application/octet-stream",
         "X-Upload-Content-Length": str(total_size),
@@ -234,7 +249,16 @@ def get_storage_quota() -> dict:
     """
     Fetches real-time storage quota of the authenticated Google Drive account.
     """
-    headers = get_auth_headers()
+    try:
+        headers = get_auth_headers()
+    except Exception as auth_err:
+        print(f"[GOOGLE DRIVE QUOTA ERROR] Auth failure: {auth_err}")
+        return {
+            "success": False,
+            "error": "Google Drive authentication expired or invalid.",
+            "auth_expired": True
+        }
+
     url = "https://www.googleapis.com/drive/v3/about?fields=storageQuota,user"
 
     try:
