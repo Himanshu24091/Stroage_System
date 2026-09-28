@@ -65,4 +65,7 @@ build/
 dist/
 *.egg-info/
 .installed.cfg
-*.egg
+# Database Backups & Dumps
+*.sql
+*.dump
+vault_backup.sql

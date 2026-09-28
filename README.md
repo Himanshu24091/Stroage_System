@@ -166,6 +166,16 @@ If file uploads ever fail with `invalid_grant` or token expired error:
 
 ---
 
+## 💾 Railway PostgreSQL Database Backup & Restore
+
+Free, encrypted 1-click backup and disaster recovery guide for Railway:
+- Secure connection via encrypted CLI tunnel (`railway connect Postgres --tunnel-only`).
+- Export and import procedures using `pgAdmin` or `pg_dump`/`psql`.
+- Detailed guide: See [RAILWAY_DATABASE_BACKUP_GUIDE.md](RAILWAY_DATABASE_BACKUP_GUIDE.md).
+
+---
+
 ## 📄 License
 MIT License. Free for personal and commercial usage.
+
 
